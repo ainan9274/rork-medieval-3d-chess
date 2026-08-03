@@ -19,6 +19,7 @@ cd web && bun install && bun run dev
 - [Features](#features)
 - [Quick start](#quick-start)
 - [Controls](#controls)
+- [Interface](#interface)
 - [Game modes](#game-modes)
 - [Battlegrounds](#battlegrounds)
 - [Project structure](#project-structure)
@@ -76,6 +77,10 @@ cd web && bun install && bun run dev
   behaviours: hold one angle, follow the figure on the move and close in on the fight, or
   drift slowly around the board. The showcase also renders crisper than a played game —
   no depth of field, softer grain, vignette and bloom.
+- **An interface that stays off the board** — icon-only controls with a themed tooltip on every
+  one of them (name, one-line explanation, key cap), the move record folded into a corner
+  sigil, and a slim showcase rail that collapses to a single icon. One key strips the whole
+  overlay for recording.
 - **Auto-detected graphics presets** (Low → Ultra) with an automatic step-down if the
   measured frame rate stays low, plus WebGL context-loss recovery.
 - **Chess clocks**, undo, resign, flip board, copyable PGN, captured tray with material score.
@@ -105,9 +110,13 @@ Cloudflare Pages or any static host. No environment variables are required to ru
 | Select a figure | Click it — legal squares glow green, captures red |
 | Move | Click a highlighted square (click the figure again to deselect) |
 | Promotion | Pick one of the four figures rotating on pedestals |
-| Camera presets | Ivory / Obsidian / Overhead / Cinematic buttons in the HUD |
+| Camera & battleground | Camera icon in the top bar — Ivory / Obsidian / Overhead / Cinematic, flip, tactical, and the four arenas |
+| What a button does | Hover or focus it (tap it on touch) — every icon carries a tooltip |
 | Skip the intro | Click anywhere during the opening sweep |
 | Settings | Gear icon — battleground, graphics preset, capture cinematics, board swing, sound |
+
+There is no drag-and-drop: a press that travels more than 8px is read as a camera swing, so
+orbiting from a figure never moves it. Selection and moves both resolve on release.
 
 Keyboard shortcuts (ignored while typing in a field):
 
@@ -115,9 +124,35 @@ Keyboard shortcuts (ignored while typing in a field):
 | --- | --- |
 | `F` | Flip the camera to the other side |
 | `T` | Toggle the 2D tactical view |
+| `H` | Open / fold the chronicle (move record and spoils) |
 | `C` | Toggle cinema mode (hide the entire interface) |
 | `Space` | Pause / resume playback in showcase mode |
-| `Esc` | Close the settings panel |
+| `Esc` | Close the settings panel, camera menu, chronicle or an open tooltip |
+
+## Interface
+
+The board owns the screen; every panel is either short, in a corner, or foldable.
+
+| Region | What lives there |
+| --- | --- |
+| Top left | Whose turn it is, the thinking pulse, the check banner, the showcase duel counter |
+| Top right | Clocks, then the icon rail — take back, resign, new duel, sound, fullscreen, flip, tactical, camera menu, settings |
+| Right, under the bar | Spoils: both captured trays and the material score (desktop only; it folds into the chronicle on narrow screens) |
+| Bottom left | The chronicle sigil — a corner button with a move counter that unfurls the record on demand (`H`) |
+| Bottom right | The showcase rail, only during a showcase duel |
+
+- **Tooltips** (`src/ui/Tooltip.tsx`) replace the browser's native `title`, which appears too
+  late to explain an icon. Each bubble carries the control's name, one sentence of
+  explanation and a key cap when there is a shortcut. It opens after 110 ms, then **instantly**
+  for the rest of a sweep along the rail, picks the screen edge that keeps it in view, flashes
+  for 1.8 s on a touch press (touch has no hover), and closes on Escape, blur or scroll. The
+  bubble is rendered inside its anchor rather than through a body portal, so it survives
+  fullscreen.
+- **The showcase rail** is a single 26px row of icons — play/pause, 0.5×–4× pace, the three
+  camera behaviours, loop, restart — held at 74% opacity until hovered, and foldable down to
+  one clapperboard icon. Pause is shown by a breathing play button instead of a large label.
+- **Cinema mode** (`C`) removes the overlay completely and leaves one small restore button, so
+  a screen capture is board-only.
 
 ## Game modes
 
@@ -125,7 +160,7 @@ Keyboard shortcuts (ignored while typing in a field):
 | --- | --- |
 | **Player vs Computer** | Pick your colour, an engine strength and an optional clock |
 | **Two players** | Hotseat on one screen; the camera swings round between turns (switchable) |
-| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera |
+| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera, foldable rail |
 | **Attract** | Leave the menu alone for 30 seconds and a showcase duel starts behind it |
 
 Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.
@@ -170,11 +205,21 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── weapons.ts          procedural arms, shields and staves per rank
         │   ├── rankBadges.ts       floating heraldic crests
         │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
-        │   ├── postfx.ts           EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA)
+        │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
+        │   ├── spells.ts           fireball orbs, per-army fire, the shared light pool
+        │   ├── postfx.ts           EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
         │   ├── textures.ts         procedural marble, basalt, bronze, cloth
         │   ├── quality.ts          graphics presets + auto-detection
         │   └── tween.ts            promise-based tween engine
-        ├── ui/             React + CSS overlay (menu, HUD, ledger, settings, game over)
+        ├── ui/             React + CSS overlay
+        │   ├── GameShell.tsx       phases, settings, attract mode, keyboard shortcuts
+        │   ├── MainMenu.tsx        mode / colour / strength / clock selection
+        │   ├── Hud.tsx             top bar, spoils, chronicle sigil, showcase rail
+        │   ├── Tooltip.tsx         themed tooltip for the icon-only controls
+        │   ├── MoveLedger.tsx      the chronicle: move list, PGN, hover preview
+        │   ├── SettingsPanel.tsx   graphics, arena, cinematics, sound
+        │   ├── Heraldry.tsx        crests, hourglasses, piece glyphs
+        │   └── medieval.css        the whole overlay's look
         ├── audio/          Web Audio mixer with layered score stems
         ├── assets/         URLs of the generated models and audio
         └── components/ui/  shadcn/ui primitives
@@ -327,9 +372,16 @@ mage's and rolls a ring of fire out across the square.
 
 The casting point is a marker parented at the head of the main weapon (`focus` in
 `src/scene/weapons.ts`), read out of the live pose each frame, so the fire hangs off the
-crystal wherever the casting arm swings it. `SPELL_LOOK` gives each army its own fire, and the
-orb carries a real point light on presets with post-processing. The three spell voices (charge,
-cast, impact) are synthesised alongside the footsteps — no assets.
+crystal wherever the casting arm swings it. `SPELL_LOOK` gives each army its own fire. The three
+spell voices (charge, cast, impact) are synthesised alongside the footsteps — no assets.
+
+**The fire's light comes from a fixed pool.** `SpellLightPool` (`src/scene/spells.ts`) creates
+three point lights once with the scene and lends them out per bolt. A light created per fireball
+crashed the tab: three.js keys its shader programs on the scene's light counts, so every material
+in the hall recompiled mid-fight. Pooled lights are never removed *or hidden* — an invisible
+light is dropped from the render state, which changes the count exactly as removing it would —
+they are only dimmed to zero and handed back. A fourth simultaneous bolt simply gets no light
+instead of a recompile, and the pool is empty on presets without post-processing.
 
 The capture dissolve is a shader injection: a noise field eats the body from the soles up with
 a glowing burn edge, while the whole mesh fades and sheds upward-drifting motes.
