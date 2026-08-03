@@ -29,6 +29,7 @@ import { ARENA_LOOKS, ARENA_ORDER, type ArenaTheme } from "../scene/arena";
 import type { CameraPreset, ShowcaseCamera } from "../scene/sceneEngine";
 import { Crest, Hourglass, pieceGlyph } from "./Heraldry";
 import { MoveLedger } from "./MoveLedger";
+import { Tooltip, type TooltipSide } from "./Tooltip";
 
 interface HudProps {
   snapshot: GameSnapshot;
@@ -274,33 +275,73 @@ export function Hud({
           ) : null}
 
           {demo ? (
-            <IconButton title="Hide the interface for recording (C)" onClick={onToggleCinema}>
+            <IconButton
+              label="Clean capture"
+              hint="Hide the whole interface for recording — the board only."
+              keys="C"
+              onClick={onToggleCinema}
+            >
               <EyeOff size={16} />
             </IconButton>
           ) : (
             <>
-              <IconButton title="Undo" onClick={onUndo} disabled={!snapshot.canUndo}>
+              <IconButton
+                label="Take back"
+                hint={
+                  snapshot.canUndo
+                    ? "Undo your last move and the reply to it."
+                    : "Nothing to take back yet."
+                }
+                onClick={onUndo}
+                disabled={!snapshot.canUndo}
+              >
                 <RotateCcw size={16} />
               </IconButton>
-              <IconButton title="Resign" onClick={onResign} disabled={snapshot.status !== "playing"} danger>
+              <IconButton
+                label="Resign"
+                hint={
+                  snapshot.status === "playing"
+                    ? "Concede the battle — your opponent wins at once."
+                    : "The battle is already over."
+                }
+                onClick={onResign}
+                disabled={snapshot.status !== "playing"}
+                danger
+              >
                 <Flag size={16} />
               </IconButton>
             </>
           )}
-          <IconButton title="New game" onClick={onNewGame}>
+          <IconButton label="New duel" hint="Abandon this battle and set the board again." onClick={onNewGame}>
             <Swords size={16} />
           </IconButton>
-          <IconButton title={muted ? "Unmute" : "Mute"} onClick={onToggleSound}>
+          <IconButton
+            label={muted ? "Sound off" : "Sound on"}
+            hint={muted ? "Bring back the score, strikes and footsteps." : "Silence the score and all battle sounds."}
+            onClick={onToggleSound}
+          >
             {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </IconButton>
-          <IconButton title="Fullscreen" onClick={onFullscreen}>
+          <IconButton label="Fullscreen" hint="Fill the whole screen with the hall." onClick={onFullscreen}>
             <Maximize size={16} />
           </IconButton>
-          <IconButton title="Flip view 180° (F)" onClick={onFlipCamera} active={cameraFlipped}>
+          <IconButton
+            label="Flip sides"
+            hint="Swing the camera 180° to watch from the opposite end."
+            keys="F"
+            onClick={onFlipCamera}
+            active={cameraFlipped}
+          >
             <Repeat size={16} />
           </IconButton>
           <IconButton
-            title={tactical ? "Back to the 3D hall (T)" : "Tactical 2D map — read the whole board (T)"}
+            label={tactical ? "Back to 3D" : "Tactical map"}
+            hint={
+              tactical
+                ? "Return to the 3D hall with the figures."
+                : "Flat overhead board — read every square at a glance."
+            }
+            keys="T"
             onClick={onToggleTactical}
             active={tactical}
           >
@@ -310,7 +351,8 @@ export function Hud({
           {/* Camera views live in a dropdown so nothing floats over the board */}
           <div className="relative" ref={cameraMenuRef}>
             <IconButton
-              title="Camera views"
+              label="Camera & arena"
+              hint="Choose a viewpoint and the hall it is fought in."
               onClick={() => setCameraMenuOpen((open) => !open)}
               active={cameraMenuOpen}
             >
@@ -385,7 +427,11 @@ export function Hud({
             ) : null}
           </div>
 
-          <IconButton title="Settings" onClick={onSettings}>
+          <IconButton
+            label="Settings"
+            hint="Graphics, sound, clocks and opponent strength."
+            onClick={onSettings}
+          >
             <SettingsIcon size={16} />
           </IconButton>
         </div>
@@ -409,22 +455,28 @@ export function Hud({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          className="mc-chronicle-fab pointer-events-auto"
-          data-open={chronicleOpen || undefined}
-          onClick={() => setChronicleOpen((open) => !open)}
-          title={chronicleOpen ? "Close the chronicle (H)" : "Chronicle — move record (H)"}
-          aria-label="Toggle the move chronicle"
-          aria-expanded={chronicleOpen}
+        <Tooltip
+          label={chronicleOpen ? "Close the chronicle" : "Chronicle"}
+          hint={chronicleOpen ? "Fold the record back into the corner." : "The full move record and the spoils taken."}
+          keys="H"
+          side="top"
         >
-          {chronicleOpen ? <X size={16} /> : <ScrollText size={16} />}
-          {!chronicleOpen && snapshot.moves.length > 0 ? (
-            <span key={snapshot.moves.length} className="mc-chronicle-badge">
-              {snapshot.moves.length}
-            </span>
-          ) : null}
-        </button>
+          <button
+            type="button"
+            className="mc-chronicle-fab pointer-events-auto"
+            data-open={chronicleOpen || undefined}
+            onClick={() => setChronicleOpen((open) => !open)}
+            aria-label="Toggle the move chronicle"
+            aria-expanded={chronicleOpen}
+          >
+            {chronicleOpen ? <X size={16} /> : <ScrollText size={16} />}
+            {!chronicleOpen && snapshot.moves.length > 0 ? (
+              <span key={snapshot.moves.length} className="mc-chronicle-badge">
+                {snapshot.moves.length}
+              </span>
+            ) : null}
+          </button>
+        </Tooltip>
       </div>
 
       {/* Showcase transport — a slim rail tucked into the bottom-right corner,
@@ -434,31 +486,37 @@ export function Hud({
         <div className="mc-demo-dock pointer-events-auto">
           {transportOpen ? (
             <div className="mc-demo-bar">
-              <button
-                type="button"
-                className="mc-demo-play"
-                data-paused={snapshot.paused || undefined}
-                onClick={onTogglePause}
-                title={snapshot.paused ? "Resume the showcase (Space)" : "Pause the showcase (Space)"}
-                aria-label={snapshot.paused ? "Resume the showcase" : "Pause the showcase"}
+              <Tooltip
+                label={snapshot.paused ? "Resume" : "Pause"}
+                hint={snapshot.paused ? "Let the duel play on." : "Freeze the duel where it stands."}
+                keys="Space"
+                side="top"
               >
-                {snapshot.paused ? <Play size={13} /> : <Pause size={13} />}
-              </button>
+                <button
+                  type="button"
+                  className="mc-demo-play"
+                  data-paused={snapshot.paused || undefined}
+                  onClick={onTogglePause}
+                  aria-label={snapshot.paused ? "Resume the showcase" : "Pause the showcase"}
+                >
+                  {snapshot.paused ? <Play size={13} /> : <Pause size={13} />}
+                </button>
+              </Tooltip>
 
               <div className="mc-demo-sep" />
 
               <div className="flex items-center gap-[0.15rem]">
                 {DEMO_SPEEDS.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    className="mc-chip mc-demo-speed"
-                    data-active={demo.speed === option.value}
-                    onClick={() => onDemoSpeed(option.value)}
-                    title={`Play at ${option.label}`}
-                  >
-                    {option.label}
-                  </button>
+                  <Tooltip key={option.label} label={`Speed ${option.label}`} hint="How fast the duel plays." side="top">
+                    <button
+                      type="button"
+                      className="mc-chip mc-demo-speed"
+                      data-active={demo.speed === option.value}
+                      onClick={() => onDemoSpeed(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
 
@@ -471,70 +529,82 @@ export function Hud({
                 {SHOWCASE_CAMERAS.map((option) => {
                   const Icon = option.icon;
                   return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className="mc-chip mc-demo-icon"
-                      data-active={showcaseCamera === option.key}
-                      onClick={() => onShowcaseCamera(option.key)}
-                      title={`${option.label} — ${option.hint}`}
-                      aria-label={`Camera: ${option.label}`}
-                      aria-pressed={showcaseCamera === option.key}
-                    >
-                      <Icon size={13} />
-                    </button>
+                    <Tooltip key={option.key} label={`Camera: ${option.label}`} hint={option.hint} side="top">
+                      <button
+                        type="button"
+                        className="mc-chip mc-demo-icon"
+                        data-active={showcaseCamera === option.key}
+                        onClick={() => onShowcaseCamera(option.key)}
+                        aria-label={`Camera: ${option.label}`}
+                        aria-pressed={showcaseCamera === option.key}
+                      >
+                        <Icon size={13} />
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>
 
               <div className="mc-demo-sep" />
 
-              <button
-                type="button"
-                className="mc-chip mc-demo-icon"
-                data-active={demo.autoRematch}
-                onClick={() => onDemoLoop(!demo.autoRematch)}
-                title="Loop — start a fresh duel when this one ends"
-                aria-label="Loop duels"
-                aria-pressed={demo.autoRematch}
-              >
-                <Repeat size={13} />
-              </button>
-              <button
-                type="button"
-                className="mc-chip mc-demo-icon"
-                onClick={onDemoRestart}
-                title={`New duel — ${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
+              <Tooltip label="Loop" hint="Start a fresh duel automatically when this one ends." side="top">
+                <button
+                  type="button"
+                  className="mc-chip mc-demo-icon"
+                  data-active={demo.autoRematch}
+                  onClick={() => onDemoLoop(!demo.autoRematch)}
+                  aria-label="Loop duels"
+                  aria-pressed={demo.autoRematch}
+                >
+                  <Repeat size={13} />
+                </button>
+              </Tooltip>
+              <Tooltip
+                label="New duel"
+                hint={`Reset the board — ${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
                   DIFFICULTY_SHORT[demo.black] ?? demo.black
-                }`}
-                aria-label="Restart the duel"
+                }.`}
+                side="top"
               >
-                <RotateCw size={13} />
-              </button>
+                <button
+                  type="button"
+                  className="mc-chip mc-demo-icon"
+                  onClick={onDemoRestart}
+                  aria-label="Restart the duel"
+                >
+                  <RotateCw size={13} />
+                </button>
+              </Tooltip>
 
-              <button
-                type="button"
-                className="mc-demo-fold"
-                onClick={() => setTransportOpen(false)}
-                title="Hide the transport"
-                aria-label="Hide the showcase transport"
-              >
-                <ChevronRight size={13} />
-              </button>
+              <Tooltip label="Hide controls" hint="Fold the rail down to a single sigil." side="left">
+                <button
+                  type="button"
+                  className="mc-demo-fold"
+                  onClick={() => setTransportOpen(false)}
+                  aria-label="Hide the showcase transport"
+                >
+                  <ChevronRight size={13} />
+                </button>
+              </Tooltip>
             </div>
           ) : (
-            <button
-              type="button"
-              className="mc-demo-tab"
-              data-paused={snapshot.paused || undefined}
-              onClick={() => setTransportOpen(true)}
-              title={`Showcase controls — ${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
+            <Tooltip
+              label="Showcase controls"
+              hint={`${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
                 DIFFICULTY_SHORT[demo.black] ?? demo.black
-              }${snapshot.paused ? " (paused)" : ""}`}
-              aria-label="Show the showcase transport"
+              }${snapshot.paused ? " — paused" : ""}. Speed, camera and loop.`}
+              side="top"
             >
-              <Clapperboard size={14} />
-            </button>
+              <button
+                type="button"
+                className="mc-demo-tab"
+                data-paused={snapshot.paused || undefined}
+                onClick={() => setTransportOpen(true)}
+                aria-label="Show the showcase transport"
+              >
+                <Clapperboard size={14} />
+              </button>
+            </Tooltip>
           )}
 
           {snapshot.paused ? <span className="mc-demo-flag mc-pulse">PAUSED</span> : null}
@@ -592,30 +662,40 @@ function ClockFace({
 
 function IconButton({
   children,
-  title,
+  label,
+  hint,
+  keys,
+  side = "bottom",
   onClick,
   disabled,
   danger,
   active,
 }: {
   children: React.ReactNode;
-  title: string;
+  /** Short name shown on the tooltip's first line and read by screen readers. */
+  label: string;
+  /** One sentence explaining what the control does. */
+  hint?: string;
+  /** Keyboard shortcut, rendered as a key cap. */
+  keys?: string;
+  side?: TooltipSide;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
   active?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      disabled={disabled}
-      data-active={active ? "true" : undefined}
-      className={`mc-btn mc-icon-btn ${danger ? "mc-btn-danger" : ""}`}
-    >
-      {children}
-    </button>
+    <Tooltip label={label} hint={hint} keys={keys} side={side}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        disabled={disabled}
+        data-active={active ? "true" : undefined}
+        className={`mc-btn mc-icon-btn ${danger ? "mc-btn-danger" : ""}`}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
