@@ -380,6 +380,18 @@ export class SceneEngine {
    * strike / death clips would sit frozen on their first frame.
    */
   private motion = new Set<PieceView>();
+  /**
+   * Bumped every time the board is rebuilt from the chess core (quality change,
+   * undo, new game). A move animation that was already running is holding views
+   * that no longer exist, so it checks this after every await and bails out
+   * instead of putting a dead figure back on a square — an orphan left standing
+   * in the hall was the ghost model seen after an automatic graphics downgrade.
+   */
+  private boardRevision = 0;
+  /** Move animations currently in flight. */
+  private movesInFlight = 0;
+  /** A rebuild waiting for the board to go quiet (see {@link setQuality}). */
+  private rebuildPending = false;
   private promotionGroup: THREE.Group | null = null;
   private promotionViews: PieceView[] = [];
   private promotionResolve: ((kind: PieceKind) => void) | null = null;
@@ -867,9 +879,20 @@ export class SceneEngine {
   // ------------------------------------------------------------------- pieces
 
   private rebuildPieces(): void {
+    // Any beat still running belongs to the old board: invalidate it first so it
+    // cannot re-register the figure it is carrying once its awaits resolve.
+    this.boardRevision += 1;
+    this.rebuildPending = false;
     for (const piece of this.pieces.values()) piece.dispose();
+    // Figures mid-march, mid-strike or mid-death are not in `pieces` — without
+    // this they would stay in the scene forever as a frozen double of the figure
+    // the rebuild puts back on their square.
+    for (const piece of this.motion) piece.dispose();
     for (const piece of this.captured) piece.dispose();
     this.pieces.clear();
+    this.motion.clear();
+    this.hoveredPiece = null;
+    this.followPiece = null;
     this.captured = [];
     this.selected = null;
     this.legalTargets.clear();
@@ -919,8 +942,28 @@ export class SceneEngine {
   // ---------------------------------------------------------------- animation
 
   private async animateMove(event: MoveEvent): Promise<void> {
+    this.movesInFlight += 1;
+    try {
+      await this.runMove(event);
+    } finally {
+      this.movesInFlight -= 1;
+      // A quality change that arrived mid-fight was held back; run it now.
+      if (this.movesInFlight === 0 && this.rebuildPending) this.rebuildPieces();
+    }
+  }
+
+  /**
+   * True when the board has been rebuilt under a running beat, which means every
+   * view that beat is holding has already been disposed.
+   */
+  private isStale(revision: number): boolean {
+    return revision !== this.boardRevision || this.disposed;
+  }
+
+  private async runMove(event: MoveEvent): Promise<void> {
     const piece = this.pieces.get(event.from);
     if (!piece) return;
+    const revision = this.boardRevision;
 
     this.clearSelection();
     this.board.clearHighlights();
@@ -965,12 +1008,14 @@ export class SceneEngine {
         this.strikeImpact(strikeSquare, 0.8);
         await this.crumble(victim, approach);
       }
+      if (this.isStale(revision)) return;
       void this.sendToTray(victim);
     } else {
       await this.glide(piece, from, to, event.kind === "n");
       audio.play("place", 0.55);
     }
 
+    if (this.isStale(revision)) return;
     piece.container.position.copy(to);
     this.motion.delete(piece);
     this.pieces.set(event.to, piece);
@@ -991,6 +1036,7 @@ export class SceneEngine {
         // The tower walks its own path after the king has taken its square, so
         // castling reads as two moves rather than one synchronised slide.
         await this.glide(rook, squareToWorld(event.rook.from), squareToWorld(event.rook.to), false);
+        if (this.isStale(revision)) return;
         this.motion.delete(rook);
         this.pieces.set(event.rook.to, rook);
         audio.play("place", 0.4);
@@ -1019,6 +1065,7 @@ export class SceneEngine {
         easing: Ease.outBack,
         onUpdate: (t) => view.container.scale.setScalar(Math.max(0.01, t)),
       });
+      if (this.isStale(revision)) return;
       view.container.scale.setScalar(1);
       this.landOn(view, event.to, 1.3);
     }
@@ -3007,7 +3054,12 @@ export class SceneEngine {
     this.jungle.applyQuality(preset);
     this.postfx.setPreset(preset);
     this.handleResize();
-    this.rebuildPieces();
+    // Rebuilding the figures mid-fight would tear down the ones that are
+    // marching, striking or dying and cut their beat short, so an automatic
+    // downgrade (which usually fires *because* a fight is on screen) waits for
+    // the board to go quiet. The rebuild then runs from `animateMove`.
+    if (this.movesInFlight > 0) this.rebuildPending = true;
+    else this.rebuildPieces();
     if (this.tactical) {
       this.restoreWorld();
       this.strikeWorld();
