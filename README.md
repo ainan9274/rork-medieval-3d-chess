@@ -271,6 +271,35 @@ The engine steps down one level automatically if the measured frame rate stays u
 Pixel ratio is capped at 2 (1 on Low), and a lost WebGL context shows a reload prompt instead
 of a black screen.
 
+### Black-screen recovery
+
+Some drivers — Mesa's software rasterisers above all, which is what a Linux box without working
+hardware acceleration falls back to — draw an all-black scene under a perfectly fine interface.
+Three independent causes have been seen: the post-processing composer returning an empty buffer,
+the PMREM reflection probe sampling as `NaN` (which poisons every lit surface while emissive
+sprites keep drawing), and the shadow maps.
+
+The engine handles all three without being asked:
+
+- **Probe self-test** (`scene/diagnostics.ts`) — at boot, a white sphere lit *only* by the freshly
+  built probe is rendered into an 8×8 buffer and read back. Black means the probe is unusable, so
+  it is dropped and an ambient skylight of the same colour takes over.
+- **Frame watchdog** — the frame is sampled five times over the first eight seconds at five points
+  (centre plus quadrants). All five have to come back black before anything is dropped, then each
+  failed sample peels off one more layer: post-processing → reflection probe → safe rendering.
+- **A notice explains what happened**, and once it falls all the way back to safe rendering the
+  choice is remembered in `localStorage` so the next visit starts with a picture.
+
+Manual controls in **Settings → Picture**:
+
+| Control | Effect |
+| --- | --- |
+| Brightness | Tone-mapping exposure multiplier, 60–180% |
+| Safe rendering | No composer, no reflection probe, no shadow maps, +20% exposure |
+
+`?safe=1` in the URL forces safe rendering on from the first frame, and the driver string is
+printed to the console (`[scene] gpu: …`) and shown under the graphics presets.
+
 ## Character animation
 
 Every figure is a rigged (skinned) character with up to five skeletal clips, declared per rank
@@ -456,6 +485,10 @@ Run from `web/`:
 Any browser with **WebGL 2** and **Web Audio**: current Chrome, Edge, Firefox and Safari 16+,
 on desktop and tablet. Touch orbit, pinch zoom and tap-to-move are supported; on narrow
 screens the move ledger folds into a corner button so the board keeps the whole viewport.
+
+On Linux, check `chrome://gpu` / `about:support` first: without hardware acceleration the browser
+falls back to llvmpipe, and the scene is then rendered by the CPU. The game still runs — see
+[Black-screen recovery](#black-screen-recovery) — but expect Low preset frame rates.
 
 ## Contributing
 

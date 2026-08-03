@@ -92,6 +92,8 @@ export class PostFX {
   private elapsed = 0;
   /** Set when a pass misbehaves on this GPU — from then on we render straight. */
   private direct = false;
+  /** Reversible version of the above, driven by the safe-rendering setting. */
+  private bypassed = false;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -113,7 +115,7 @@ export class PostFX {
   private build(): void {
     this.dispose();
     const settings = QUALITY_SETTINGS[this.preset];
-    if (this.direct || !settings.postFx) return;
+    if (this.direct || this.bypassed || !settings.postFx) return;
 
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
@@ -239,6 +241,20 @@ export class PostFX {
     this.composer?.setPixelRatio(this.renderer.getPixelRatio());
     this.composer?.setSize(width, height);
     if (this.ssaoPass) this.ssaoPass.setSize(width, height);
+  }
+
+  /**
+   * Safe rendering: skip the composer entirely but stay able to come back, so
+   * the player can try the cinematic pipeline again without a reload.
+   */
+  setBypassed(active: boolean): void {
+    if (this.bypassed === active) return;
+    this.bypassed = active;
+    this.build();
+  }
+
+  get isBypassed(): boolean {
+    return this.bypassed || this.direct;
   }
 
   /**

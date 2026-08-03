@@ -1201,3 +1201,52 @@
   color: #fff4dc;
   border-color: rgba(246, 223, 165, 0.7);
 }
+
+/* Brightness slider — brass rail with a gold nail. */
+.mc-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1.1rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mc-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(20, 18, 15, 0.9), rgba(216, 177, 99, 0.85));
+  border: 1px solid rgba(216, 177, 99, 0.28);
+}
+
+.mc-slider::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(20, 18, 15, 0.9), rgba(216, 177, 99, 0.85));
+  border: 1px solid rgba(216, 177, 99, 0.28);
+}
+
+.mc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -5.5px;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #fbe9bd, #8a6522);
+  border: 1px solid rgba(246, 223, 165, 0.9);
+  box-shadow: 0 0 8px rgba(246, 223, 165, 0.35);
+}
+
+.mc-slider::-moz-range-thumb {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #fbe9bd, #8a6522);
+  border: 1px solid rgba(246, 223, 165, 0.9);
+  box-shadow: 0 0 8px rgba(246, 223, 165, 0.35);
+}
+
+.mc-slider:focus-visible::-webkit-slider-thumb {
+  outline: 1px solid rgba(246, 223, 165, 0.9);
+  outline-offset: 2px;
+}

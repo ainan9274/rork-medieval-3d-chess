@@ -10,6 +10,7 @@ import { Battlefield } from "./battlefield";
 import { JungleOverlay } from "./jungle";
 import { BOARD_TOP, BoardView, type HighlightKind, TILE, squareToWorld, worldToSquare } from "./board";
 import { CastleHall, buildEnvironmentMap } from "./environment";
+import { describeGpu, probeGpu, reflectionProbeWorks, type GpuReport } from "./diagnostics";
 import { EffectsSystem, ShakeSystem } from "./effects";
 import { FACTION_ACCENT, PieceFactory, PieceView, type ClipName, type TemplateKey } from "./pieces";
 import { PostFX } from "./postfx";
@@ -39,6 +40,12 @@ export interface SceneCallbacks {
   onContextLost: () => void;
   onCameraFlipped?: (flipped: boolean) => void;
   onTacticalView?: (active: boolean) => void;
+  /**
+   * Fired when the engine had to drop part of the pipeline to get a picture on
+   * screen. `safe` is true once it has fallen all the way back to safe
+   * rendering, so the UI can persist that choice for the next visit.
+   */
+  onRenderFallback?: (message: string, safe: boolean) => void;
 }
 
 interface CameraShot {
@@ -78,6 +85,13 @@ const TACTICAL_FOV = 28;
 const DEFAULT_FOV = 46;
 
 const PROMOTION_CHOICES: PieceKind[] = ["q", "r", "b", "n"];
+
+/**
+ * When the frame is sampled for the black-screen watchdog, in seconds since the
+ * first frame. The first check is late enough that the hall is standing and the
+ * intro has moved off its opening frame.
+ */
+const DARK_FRAME_CHECKS = [2, 3.4, 4.8, 6.2, 8];
 
 /**
  * How each rank sounds when it goes down: the court and the big bodies die
@@ -386,7 +400,29 @@ export class SceneEngine {
   private running = false;
   private disposed = false;
   private frameErrors = 0;
-  private blackFrameChecks = 0;
+  /** How many times the frame has been sampled for the black-screen check. */
+  private darkFrameChecks = 0;
+  /** How far the engine has already fallen back (see `escalateFallback`). */
+  private fallbackStage = 0;
+  /** What this driver is, and what it can do. */
+  private gpu: GpuReport;
+  /**
+   * Safe rendering: no composer, no reflection probe, no shadow maps. Every one
+   * of those has been seen to render an all-black hall on Mesa drivers, so this
+   * is the switch that always gets a picture up.
+   */
+  private safeMode = false;
+  /** Player-side exposure multiplier, for screens that read too dark. */
+  private brightness = 1;
+  /** The probe currently lighting the scene, kept so it can be disposed. */
+  private environmentMap: THREE.Texture | null = null;
+  /**
+   * Null until the probe has been tested on this driver, then false forever if
+   * the test failed — there is no point rebuilding it on every arena change.
+   */
+  private environmentUsable: boolean | null = null;
+  /** Stands in for the probe's ambient contribution when the probe is off. */
+  private ambientFallback: THREE.AmbientLight;
 
   private preset: QualityPreset;
   private arena: ArenaTheme = DEFAULT_ARENA;
@@ -457,8 +493,11 @@ export class SceneEngine {
     this.renderer.shadowMap.enabled = settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = look.exposure;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    this.gpu = probeGpu(this.renderer);
+    console.info(`[scene] gpu: ${describeGpu(this.gpu)}`);
+    this.applyExposure(look.exposure);
 
     this.scene.background = new THREE.Color(look.background);
     // Thinner, warmer haze than a sealed hall would use: the siege camps and
@@ -503,8 +542,11 @@ export class SceneEngine {
     this.cameraLamp.target.position.set(0, 0, -1);
     this.scene.add(this.camera);
 
-    this.scene.environment = buildEnvironmentMap(this.renderer, look);
-    this.scene.environmentIntensity = look.environment.intensity;
+    // Skylight stand-in: silent while the reflection probe is doing its job,
+    // turned up the moment the probe is dropped so nothing goes unlit.
+    this.ambientFallback = new THREE.AmbientLight(look.environment.top, 0);
+    this.scene.add(this.ambientFallback);
+    this.applyEnvironment();
 
     this.postfx = new PostFX(this.renderer, this.scene, this.camera);
     this.postfx.setGrade(look.grade);
@@ -627,46 +669,175 @@ export class SceneEngine {
   }
 
   /**
-   * Some GPU/driver combinations silently produce an empty frame through the
-   * composer. Sample the middle of the canvas twice during the first seconds
-   * and fall back to a plain forward render rather than showing a black hall.
+   * Black-screen watchdog.
+   *
+   * Several driver stacks — Mesa's software rasterisers above all, which is what
+   * a Linux box without working hardware acceleration falls back to — render an
+   * all-black hall while the interface above it is perfectly fine. The cause is
+   * never the same twice: sometimes the composer returns an empty buffer,
+   * sometimes the reflection probe samples as NaN and poisons every lit
+   * surface, sometimes it is the shadow maps.
+   *
+   * So rather than guessing, the frame itself is sampled five times over the
+   * first seconds and each failed sample drops one more layer, in increasing
+   * order of how much it costs to lose.
    */
   private guardAgainstBlackFrames(): void {
-    if (this.blackFrameChecks >= 2 || !this.postfx.enabled) return;
-    const due = this.blackFrameChecks === 0 ? 1.2 : 2.6;
-    if (this.elapsed < due) return;
-    this.blackFrameChecks += 1;
-    if (!this.isCentreBlack()) {
-      this.blackFrameChecks = 2;
+    if (this.darkFrameChecks >= DARK_FRAME_CHECKS.length) return;
+    if (this.elapsed < DARK_FRAME_CHECKS[this.darkFrameChecks]) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    this.darkFrameChecks += 1;
+    if (!this.isFrameBlack()) {
+      // A picture is on screen — stand the watchdog down for good.
+      this.darkFrameChecks = DARK_FRAME_CHECKS.length;
       return;
     }
-    if (this.blackFrameChecks < 2) return;
-    this.postfx.forceDirect("composer produced an empty frame");
+    this.escalateFallback();
   }
 
-  private isCentreBlack(): boolean {
+  /**
+   * Reads five small patches spread across the frame (centre plus the four
+   * quadrants). Every one of them has to come back black before anything is
+   * dropped, so a dark corner or a night-time arena never triggers this.
+   */
+  private isFrameBlack(): boolean {
     const gl = this.renderer.getContext();
     const { width, height } = this.renderer.domElement;
-    if (width < 8 || height < 8) return false;
-    const span = 8;
+    const span = 6;
+    if (width < span * 4 || height < span * 4) return false;
+    const spots: [number, number][] = [
+      [0.5, 0.5],
+      [0.28, 0.32],
+      [0.72, 0.32],
+      [0.28, 0.7],
+      [0.72, 0.7],
+    ];
     const pixels = new Uint8Array(span * span * 4);
-    try {
-      gl.readPixels(
-        Math.floor(width / 2 - span / 2),
-        Math.floor(height / 2 - span / 2),
-        span,
-        span,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels,
-      );
-    } catch {
-      return false;
-    }
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i] > 10 || pixels[i + 1] > 10 || pixels[i + 2] > 10) return false;
+    for (const [u, v] of spots) {
+      try {
+        gl.readPixels(
+          Math.floor(width * u - span / 2),
+          Math.floor(height * v - span / 2),
+          span,
+          span,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels,
+        );
+      } catch {
+        return false;
+      }
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i] > 10 || pixels[i + 1] > 10 || pixels[i + 2] > 10) return false;
+      }
     }
     return true;
+  }
+
+  /** Drops the next layer of the pipeline and tells the interface why. */
+  private escalateFallback(): void {
+    this.fallbackStage += 1;
+    switch (this.fallbackStage) {
+      case 1:
+        if (this.postfx.isBypassed) {
+          this.escalateFallback();
+          return;
+        }
+        this.postfx.setBypassed(true);
+        this.report("Post-processing produced an empty frame on this driver — cinematic effects turned off.", false);
+        return;
+      case 2:
+        if (this.environmentUsable === false) {
+          this.escalateFallback();
+          return;
+        }
+        this.environmentUsable = false;
+        this.applyEnvironment();
+        this.report("This driver cannot sample the reflection probe — switched to plain skylight.", false);
+        return;
+      default:
+        if (this.safeMode) {
+          console.warn("[scene] still rendering black after every fallback", describeGpu(this.gpu));
+          this.darkFrameChecks = DARK_FRAME_CHECKS.length;
+          return;
+        }
+        this.setSafeMode(true);
+        this.report("Switched to safe rendering — your graphics driver could not draw the full scene.", true);
+        return;
+    }
+  }
+
+  private report(message: string, safe: boolean): void {
+    console.warn(`[scene] ${message} (${describeGpu(this.gpu)})`);
+    this.callbacks.onRenderFallback?.(message, safe);
+  }
+
+  // -------------------------------------------------------------- render health
+
+  /** Tone mapping exposure, with the player's brightness on top of the theme. */
+  private applyExposure(base = this.baseExposure()): void {
+    this.renderer.toneMappingExposure = base * this.brightness * (this.safeMode ? 1.2 : 1);
+  }
+
+  private baseExposure(): number {
+    const look = ARENA_LOOKS[this.arena];
+    return this.tactical ? look.exposure * 1.12 : look.exposure;
+  }
+
+  /**
+   * (Re)builds the reflection probe for the current arena, self-tests it once on
+   * this driver, and falls back to a plain ambient skylight if it cannot be
+   * trusted. A NaN probe blacks out every lit surface in the hall, so this is
+   * the single most likely cause of an all-black scene.
+   */
+  private applyEnvironment(): void {
+    const look = ARENA_LOOKS[this.arena];
+    const previous = this.environmentMap;
+    this.environmentMap = null;
+    this.scene.environment = null;
+    previous?.dispose();
+
+    const allowed = !this.safeMode && this.environmentUsable !== false && this.gpu.halfFloatBuffer;
+    if (allowed) {
+      try {
+        const map = buildEnvironmentMap(this.renderer, look);
+        if (this.environmentUsable === null) {
+          this.environmentUsable = reflectionProbeWorks(this.renderer, map);
+          if (!this.environmentUsable) console.warn("[scene] reflection probe renders black — using ambient skylight");
+        }
+        if (this.environmentUsable) {
+          this.environmentMap = map;
+          this.scene.environment = map;
+          this.scene.environmentIntensity = look.environment.intensity;
+        } else {
+          map.dispose();
+        }
+      } catch (error) {
+        this.environmentUsable = false;
+        console.warn("[scene] could not build the reflection probe", error);
+      }
+    }
+
+    // Without a probe the ambient term has to come from somewhere, or armour and
+    // marble read as pure silhouettes.
+    const lit = this.environmentMap !== null;
+    this.ambientFallback.color.setHex(look.environment.top).lerp(new THREE.Color(look.environment.warm), 0.4);
+    this.ambientFallback.intensity = lit ? 0 : look.environment.intensity * 1.15;
+    this.refreshMaterials();
+  }
+
+  /**
+   * Forces a shader rebuild on every material in the scene. Needed whenever the
+   * shadow map is switched on or off at runtime, which otherwise leaves stale
+   * programs behind.
+   */
+  private refreshMaterials(): void {
+    this.scene.traverse((object) => {
+      const material = (object as THREE.Mesh).material;
+      if (!material) return;
+      if (Array.isArray(material)) material.forEach((entry) => (entry.needsUpdate = true));
+      else material.needsUpdate = true;
+    });
   }
 
   private sampleFps(delta: number): void {
@@ -2228,7 +2399,7 @@ export class SceneEngine {
     (this.scene.background as THREE.Color).setHex(look.background);
     const fog = this.scene.fog as THREE.FogExp2 | null;
     if (fog) fog.density = look.fog.density;
-    this.renderer.toneMappingExposure = look.exposure;
+    this.applyExposure(look.exposure);
     for (const piece of this.allPieces()) piece.setFlat(false);
 
     this.controls.enableRotate = true;
@@ -2269,7 +2440,7 @@ export class SceneEngine {
     (this.scene.background as THREE.Color).setHex(look.background).multiplyScalar(0.16);
     const fog = this.scene.fog as THREE.FogExp2 | null;
     if (fog) fog.density = 0;
-    this.renderer.toneMappingExposure = look.exposure * 1.12;
+    this.applyExposure(look.exposure * 1.12);
   }
 
   /**
@@ -2792,7 +2963,7 @@ export class SceneEngine {
     this.arena = theme;
     const look = ARENA_LOOKS[theme];
 
-    this.renderer.toneMappingExposure = look.exposure;
+    this.applyExposure(look.exposure);
     (this.scene.background as THREE.Color).setHex(look.background);
     const fog = this.scene.fog as THREE.FogExp2 | null;
     if (fog) {
@@ -2817,10 +2988,7 @@ export class SceneEngine {
       this.applyTacticalAtmosphere();
     }
 
-    const previous = this.scene.environment;
-    this.scene.environment = buildEnvironmentMap(this.renderer, look);
-    this.scene.environmentIntensity = look.environment.intensity;
-    previous?.dispose();
+    this.applyEnvironment();
   }
 
   /** The map currently staged. */
@@ -2833,7 +3001,7 @@ export class SceneEngine {
     this.preset = preset;
     const settings = QUALITY_SETTINGS[preset];
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.maxPixelRatio));
-    this.renderer.shadowMap.enabled = settings.shadows;
+    this.renderer.shadowMap.enabled = settings.shadows && !this.safeMode;
     this.hall.applyQuality(preset);
     this.battlefield.applyQuality(preset);
     this.jungle.applyQuality(preset);
@@ -2844,6 +3012,41 @@ export class SceneEngine {
       this.restoreWorld();
       this.strikeWorld();
     }
+  }
+
+  /**
+   * Safe rendering. Drops the three things that have been seen to render an
+   * all-black scene on Linux/Mesa drivers — the post-processing composer, the
+   * reflection probe and the shadow maps — and lifts the exposure a touch to
+   * make up for the lost ambient. Fully reversible.
+   */
+  setSafeMode(active: boolean): void {
+    if (this.safeMode === active) return;
+    this.safeMode = active;
+    this.postfx.setBypassed(active);
+    this.renderer.shadowMap.enabled = !active && QUALITY_SETTINGS[this.preset].shadows;
+    // A probe that was never tested deserves another chance when safe mode is
+    // switched off by hand; one that failed its self-test stays off.
+    this.applyEnvironment();
+    this.applyExposure();
+    this.refreshMaterials();
+  }
+
+  isSafeMode(): boolean {
+    return this.safeMode;
+  }
+
+  /** Player-side exposure multiplier (0.6–1.8) for screens that read too dark. */
+  setBrightness(value: number): void {
+    const clamped = Math.min(1.8, Math.max(0.6, value));
+    if (Math.abs(clamped - this.brightness) < 0.001) return;
+    this.brightness = clamped;
+    this.applyExposure();
+  }
+
+  /** One line naming the driver, for the settings panel and bug reports. */
+  getGpuSummary(): string {
+    return describeGpu(this.gpu);
   }
 
   /** Rebuilds every figure from the chess core (used after undo). */
@@ -3008,6 +3211,9 @@ export class SceneEngine {
     this.battlefield.dispose();
     this.jungle.dispose();
     this.factory.dispose();
+    this.environmentMap?.dispose();
+    this.environmentMap = null;
+    this.scene.environment = null;
     this.postfx.dispose();
     this.controls.dispose();
     this.renderer.dispose();

@@ -126,6 +126,22 @@ The preset is auto-detected on first load from the GPU string, core count and me
 the engine steps down once automatically if the measured frame rate stays under 40 FPS.
 Pixel ratio is capped at 2 (1 on Low), and WebGL context loss shows a reload prompt.
 
+### Black-screen recovery
+
+Drivers that render an all-black scene under a working interface (Mesa's software rasterisers on
+Linux above all) are handled in three places:
+
+- `scene/diagnostics.ts` — `probeGpu` names the driver, `reflectionProbeWorks` renders a white
+  sphere lit only by the freshly built PMREM probe into an 8×8 buffer and reads it back. Black or
+  `NaN` means the probe is unusable, so `SceneEngine.applyEnvironment` drops it and turns up an
+  ambient skylight of the same colour instead.
+- `SceneEngine.guardAgainstBlackFrames` — samples the frame at five points (centre plus quadrants)
+  five times over the first eight seconds. All five points must read black before anything is
+  dropped; each failed sample peels off one more layer: composer → reflection probe → safe mode.
+- **Settings → Picture** — a brightness slider (exposure ×0.6–1.8) and a `Safe rendering` toggle
+  (`SceneEngine.setSafeMode`: no composer, no probe, no shadow maps, +20% exposure). Both are
+  persisted in `localStorage` under `kg.render`, and `?safe=1` forces safe rendering from boot.
+
 A showcase duel adds a **clarity grade** on top of the preset (`Postfx.setClarity`): no depth of
 field, grain ×0.3, vignette ×0.5 and bloom ×0.62 at a higher threshold, because a duel that is
 watched rather than played needs the sculpts and the squares to read.
