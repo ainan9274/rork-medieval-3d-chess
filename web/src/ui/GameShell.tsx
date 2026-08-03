@@ -6,7 +6,7 @@ import type { LedgerMove } from "../core/types";
 import { Clapperboard } from "lucide-react";
 import { ARENA_LOOKS, DEFAULT_ARENA, type ArenaTheme } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
-import { SceneEngine, type CameraPreset } from "../scene/sceneEngine";
+import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { MainMenu, type MatchConfig } from "./MainMenu";
@@ -51,6 +51,8 @@ export function GameShell() {
   const [notice, setNotice] = useState<string | null>(null);
   /** Showcase recording: strips every panel so the capture is board-only. */
   const [cinema, setCinema] = useState(false);
+  /** How the camera behaves during a showcase duel: held, orbiting or following. */
+  const [showcaseCamera, setShowcaseCamera] = useState<ShowcaseCamera>("follow");
 
   // ------------------------------------------------------------ boot the scene
   useEffect(() => {
@@ -178,10 +180,11 @@ export function GameShell() {
       const showcase = config.mode === "demo";
       engine?.setAttract(false);
       engine?.setInteractive(true);
-      engine?.setShowcase(showcase);
-      engine?.setCameraPreset(
-        showcase ? "cinematic" : config.mode === "ai" && config.playerColor === "b" ? "black" : "white",
-      );
+      // A showcase brings its own framing (and its own crisp grade) with it.
+      engine?.setShowcase(showcase, showcaseCamera);
+      if (!showcase) {
+        engine?.setCameraPreset(config.mode === "ai" && config.playerColor === "b" ? "black" : "white");
+      }
       controller.start({
         mode: config.mode,
         difficulty: config.difficulty,
@@ -191,7 +194,7 @@ export function GameShell() {
       });
       setPhase("playing");
     },
-    [controller, stopAttract],
+    [controller, showcaseCamera, stopAttract],
   );
 
   const returnToMenu = useCallback(() => {
@@ -229,9 +232,14 @@ export function GameShell() {
 
   const handleDemoRestart = useCallback(() => {
     audio.blip("press");
-    engineRef.current?.setCameraPreset("cinematic");
     controller.restartDemo();
   }, [controller]);
+
+  const handleShowcaseCamera = useCallback((mode: ShowcaseCamera) => {
+    audio.blip("press");
+    setShowcaseCamera(mode);
+    engineRef.current?.setShowcaseCamera(mode);
+  }, []);
 
   const handleUndo = useCallback(() => {
     if (controller.undo()) {
@@ -370,6 +378,8 @@ export function GameShell() {
             onDemoSpeed={handleDemoSpeed}
             onDemoLoop={handleDemoLoop}
             onDemoRestart={handleDemoRestart}
+            showcaseCamera={showcaseCamera}
+            onShowcaseCamera={handleShowcaseCamera}
             onToggleCinema={() => setCinema(true)}
           />
         ) : null}

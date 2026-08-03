@@ -20,6 +20,16 @@ import { Ease, type Easing, TweenManager, wait } from "./tween";
 
 export type CameraPreset = "white" | "black" | "top" | "cinematic";
 
+/**
+ * How the camera behaves during a computer-vs-computer showcase.
+ *
+ * - `still` holds one framing and never moves on its own.
+ * - `orbit` drifts slowly around the board (the old behaviour).
+ * - `follow` keeps the figure on the move — and the fight it walks into —
+ *   centred in frame, pulling in tighter for the kill.
+ */
+export type ShowcaseCamera = "still" | "orbit" | "follow";
+
 export interface SceneCallbacks {
   onLoadProgress: (ratio: number) => void;
   onReady: () => void;
@@ -42,6 +52,19 @@ const CAMERA_SHOTS: Record<CameraPreset, CameraShot> = {
   top: { position: new THREE.Vector3(0, 12.4, 0.35), target: new THREE.Vector3(0, 0.2, 0) },
   cinematic: { position: new THREE.Vector3(9.6, 3.6, 6.8), target: new THREE.Vector3(-0.4, 0.5, -0.4) },
 };
+
+/**
+ * The showcase framing: higher and further back than the cinematic shot, so the
+ * whole board reads at once and no figure is seen through the haze at floor
+ * level. This is the angle a still showcase holds for the entire duel.
+ */
+const SHOWCASE_SHOT: CameraShot = {
+  position: new THREE.Vector3(7.1, 6.5, 8.2),
+  target: new THREE.Vector3(0, 0.35, 0),
+};
+
+/** What the follow camera looks at between moves. */
+const BOARD_FOCUS = new THREE.Vector3(0, 0.45, 0);
 
 /**
  * The flat tactical map: high above the board, dead centre and shot through a
@@ -374,11 +397,29 @@ export class SceneEngine {
   private rankBadges = true;
   private interactive = true;
   private attract = false;
-  /** Computer-vs-computer showcase: slow auto orbit + cinematic grade. */
+  /** Computer-vs-computer showcase: crisp grade and a chosen camera behaviour. */
   private showcase = false;
+  private showcaseCamera: ShowcaseCamera = "follow";
   private showcaseOrbitSpeed = 0.32;
   /** Elapsed time of the last manual camera drag (auto orbit yields to it). */
   private lastManualCameraAt = -999;
+  /** The figure the follow camera is tracking, if any. */
+  private followPiece: PieceView | null = null;
+  /** A fixed point the follow camera holds when no figure is moving. */
+  private followPoint: THREE.Vector3 | null = null;
+  /** Radius multiplier: a fight pulls the rig in closer than a plain march. */
+  private followTightness = 1;
+  /** The eased point actually being framed, so a jumping focus never snaps. */
+  private followedFocus = new THREE.Vector3(0, 0.45, 0);
+  /** Azimuth, elevation and distance the follow camera holds. */
+  private followRig = new THREE.Spherical(7.6, 0.92, Math.PI * 0.32);
+  private followOffset = new THREE.Spherical();
+  private scratchFocus = new THREE.Vector3();
+  private scratchDesired = new THREE.Vector3();
+  /** True while the engine itself is moving the camera (never counts as input). */
+  private cameraDriven = false;
+  /** True while a scripted camera move (intro, dolly, preset) is running. */
+  private cameraScripted = false;
   private introPlaying = false;
   private introSkipped = false;
   private orbiting = false;
@@ -563,12 +604,19 @@ export class SceneEngine {
 
     if (this.tactical) this.alignTokens();
 
-    // Auto orbit for the attract loop and the showcase, but never fight the
-    // hand on the mouse: a drag suspends it for a few seconds.
+    // Auto orbit for the attract loop, and for a showcase only when the viewer
+    // has actually asked for one. Never fight the hand on the mouse: a drag
+    // suspends it for a few seconds.
     const orbitIdle = this.elapsed - this.lastManualCameraAt > 3.2;
-    this.controls.autoRotate = !this.tactical && (this.attract || (this.showcase && orbitIdle));
+    const showcaseOrbit = this.showcase && this.showcaseCamera === "orbit" && orbitIdle;
+    this.controls.autoRotate = !this.tactical && (this.attract || showcaseOrbit);
     this.controls.autoRotateSpeed = this.attract ? 0.45 : this.showcaseOrbitSpeed;
+
+    // The follow camera writes the camera itself, so `change` events fired by
+    // the controls below must not be mistaken for the viewer grabbing the view.
+    this.cameraDriven = this.updateFollowCamera(delta);
     this.controls.update();
+    this.cameraDriven = false;
 
     this.camera.position.add(this.shake.offset);
     this.postfx.render(delta);
@@ -715,6 +763,10 @@ export class SceneEngine {
     const from = squareToWorld(event.from);
     const to = squareToWorld(event.to);
 
+    // Showcase follow camera: ride with the figure that is on the move, and
+    // sit in a shade closer when it is walking into a fight.
+    this.focusPiece(piece, victim ? 0.86 : 0.98);
+
     if (victim) {
       const strikeSquare = event.capture ? event.capture.square : event.to;
       // The battle beat is a camera performance — it has no meaning on the map.
@@ -751,6 +803,8 @@ export class SceneEngine {
     piece.container.position.copy(to);
     this.motion.delete(piece);
     this.pieces.set(event.to, piece);
+    // The move is over: hold on the square that was just taken.
+    this.focusPoint(to, 1);
     // Taking the square: dust ring, tile dip and the figure settling its weight.
     // Softer after a kill — the strike already shook the stone.
     this.landOn(piece, event.to, victim ? 0.7 : event.kind === "n" ? 1.25 : 1);
@@ -1057,6 +1111,8 @@ export class SceneEngine {
     const settings = QUALITY_SETTINGS[this.preset];
     const direction = to.clone().sub(from).normalize();
     const standoff = to.clone().sub(direction.clone().multiplyScalar(TILE * 0.52));
+    // The fight is the shot: frame the two bodies and pull the rig in.
+    this.focusPoint(standoff.clone().lerp(to, 0.5), 0.68);
     // En passant kills a pawn on a different square than the one moved to.
     const victimSpot = victim.container.position.clone();
     const blow = victimSpot.clone().sub(standoff).setY(0);
@@ -1276,6 +1332,8 @@ export class SceneEngine {
     blow.normalize();
 
     const spell = spellProfile(attacker.kind);
+    // A duel at range: hold both ends of the bolt in frame.
+    this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
     const originalFov = this.camera.fov;
     void this.tweens.to({
       duration: 0.28,
@@ -1337,6 +1395,7 @@ export class SceneEngine {
     // The body is cleared off the board, and only then is the square walked to.
     await this.banish(victim, blow);
     if (cast) attacker.playIdle(0.2);
+    this.focusPiece(attacker, 0.94);
     await this.glide(attacker, from, to, false, 1.15);
     audio.play("place", 0.5);
   }
@@ -2037,15 +2096,86 @@ export class SceneEngine {
     const fromPosition = this.camera.position.clone();
     const fromTarget = this.controls.target.clone();
     this.controls.enabled = false;
-    await this.tweens.to({
-      duration,
-      easing: Ease.inOutCubic,
-      onUpdate: (t) => {
-        this.camera.position.lerpVectors(fromPosition, shot.position, t);
-        this.controls.target.lerpVectors(fromTarget, shot.target, t);
-      },
-    });
+    this.cameraScripted = true;
+    try {
+      await this.tweens.to({
+        duration,
+        easing: Ease.inOutCubic,
+        onUpdate: (t) => {
+          this.camera.position.lerpVectors(fromPosition, shot.position, t);
+          this.controls.target.lerpVectors(fromTarget, shot.target, t);
+        },
+      });
+    } finally {
+      this.cameraScripted = false;
+      this.captureFollowRig();
+    }
     this.controls.enabled = this.interactive;
+  }
+
+  // ------------------------------------------------------------ follow camera
+
+  /**
+   * The showcase follow camera. It holds one angle and one distance — whatever
+   * the viewer last left the view on — and only ever slides that rig sideways
+   * to keep the action in frame, so the board never spins under the fight.
+   *
+   * @returns true while the engine is the one writing the camera.
+   */
+  private updateFollowCamera(delta: number): boolean {
+    if (!this.showcase || this.showcaseCamera !== "follow") return false;
+    if (this.tactical || this.orbiting || this.cameraScripted || this.introPlaying) return false;
+    // A hand on the mouse always wins; tracking resumes a couple of seconds later.
+    if (this.elapsed - this.lastManualCameraAt < 2.4) return false;
+
+    const focus = this.followPiece?.container.position ?? this.followPoint ?? BOARD_FOCUS;
+    this.followedFocus.lerp(
+      this.scratchFocus.copy(focus).setY(THREE.MathUtils.clamp(focus.y + 0.45, 0.35, 1.1)),
+      1 - Math.exp(-delta * 3.6),
+    );
+
+    this.followOffset.set(
+      THREE.MathUtils.clamp(this.followRig.radius * this.followTightness, 4.8, 16),
+      this.followRig.phi,
+      this.followRig.theta,
+    );
+    const desired = this.scratchDesired.setFromSpherical(this.followOffset).add(this.followedFocus);
+    const smooth = 1 - Math.exp(-delta * 2.4);
+    this.camera.position.lerp(desired, smooth);
+    this.controls.target.lerp(this.followedFocus, smooth);
+    return true;
+  }
+
+  /**
+   * Remembers the angle and distance the view is currently sitting at, so the
+   * follow camera tracks the action from wherever the viewer put the camera
+   * rather than snapping back to a canned shot.
+   */
+  private captureFollowRig(): void {
+    const offset = this.scratchDesired.copy(this.camera.position).sub(this.controls.target);
+    if (offset.lengthSq() < 1e-4) return;
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    this.followRig.phi = spherical.phi;
+    this.followRig.theta = spherical.theta;
+    this.followRig.radius = THREE.MathUtils.clamp(
+      spherical.radius / Math.max(0.4, this.followTightness),
+      5.4,
+      13,
+    );
+  }
+
+  /** Follow-camera subject: the figure currently crossing the board. */
+  private focusPiece(piece: PieceView | null, tightness = 1): void {
+    this.followPiece = piece;
+    if (piece) this.followPoint = null;
+    this.followTightness = tightness;
+  }
+
+  /** Follow-camera subject: a fixed point — the fight, or the square taken. */
+  private focusPoint(point: THREE.Vector3 | null, tightness = 1): void {
+    this.followPiece = null;
+    this.followPoint = point ? point.clone() : null;
+    this.followTightness = tightness;
   }
 
   setCameraPreset(preset: CameraPreset): void {
@@ -2115,6 +2245,7 @@ export class SceneEngine {
     const fromTarget = this.controls.target.clone();
     const fromFov = this.camera.fov;
     this.controls.enabled = false;
+    this.cameraScripted = true;
     await this.tweens.to({
       duration: 0.95,
       easing: Ease.inOutCubic,
@@ -2127,6 +2258,8 @@ export class SceneEngine {
     });
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
+    this.cameraScripted = false;
+    this.captureFollowRig();
     this.controls.enabled = this.interactive;
   }
 
@@ -2361,6 +2494,7 @@ export class SceneEngine {
   private bindEvents(): void {
     this.controls.addEventListener("start", this.onManualCamera);
     this.controls.addEventListener("change", this.onManualCameraChange);
+    this.controls.addEventListener("end", this.onManualCameraEnd);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     window.addEventListener("pointerup", this.onPointerUp);
@@ -2741,20 +2875,55 @@ export class SceneEngine {
   }
 
   /**
-   * Showcase presentation for computer-vs-computer demos: cinematic grading and
-   * a slow orbit, while the viewer keeps full control of the camera.
+   * Showcase presentation for computer-vs-computer duels.
+   *
+   * The viewer is only ever watching here, so the picture is tuned for reading
+   * the board rather than for atmosphere: no depth of field at all (that soft
+   * wash was blurring the whole hall), grain, vignette and bloom pulled back,
+   * and one held framing instead of a permanent orbit. The camera behaviour is
+   * the viewer's choice — see {@link ShowcaseCamera}.
    */
-  setShowcase(active: boolean, orbitSpeed = 0.32): void {
-    if (this.showcase === active && this.showcaseOrbitSpeed === orbitSpeed) return;
+  setShowcase(active: boolean, camera: ShowcaseCamera = "follow", orbitSpeed = 0.32): void {
+    const changed = this.showcase !== active;
     this.showcase = active;
     this.showcaseOrbitSpeed = orbitSpeed;
-    this.postfx.setCinematic(active, 9);
-    if (!active) this.controls.autoRotate = false;
+    this.showcaseCamera = camera;
+    // A showcase is watched, never squinted at: keep it sharp.
+    this.postfx.setCinematic(false);
+    this.postfx.setClarity(active);
+    if (!active) {
+      this.controls.autoRotate = false;
+      this.focusPoint(null);
+      return;
+    }
+    if (camera !== "orbit") this.controls.autoRotate = false;
+    if (changed && !this.tactical) {
+      this.followedFocus.copy(BOARD_FOCUS);
+      void this.moveCameraTo(SHOWCASE_SHOT, 1.4);
+    }
+  }
+
+  /** Switches the showcase camera between a held angle, an orbit and following. */
+  setShowcaseCamera(camera: ShowcaseCamera): void {
+    if (this.showcaseCamera === camera) return;
+    this.showcaseCamera = camera;
+    if (camera !== "orbit") this.controls.autoRotate = false;
+    if (camera === "follow") {
+      // Track from wherever the view is sitting right now.
+      this.captureFollowRig();
+      this.followedFocus.copy(this.controls.target);
+    }
+  }
+
+  /** The showcase camera behaviour currently in force. */
+  getShowcaseCamera(): ShowcaseCamera {
+    return this.showcaseCamera;
   }
 
   setAttract(active: boolean): void {
     this.attract = active;
-    this.postfx.setCinematic(active, 10);
+    this.postfx.setCinematic(false);
+    this.postfx.setClarity(active || this.showcase);
     if (active) {
       this.controls.enabled = false;
       void this.moveCameraTo(CAMERA_SHOTS.cinematic, 2);
@@ -2789,8 +2958,13 @@ export class SceneEngine {
 
   /** Damping keeps firing `change` after a drag; only count real user input. */
   private onManualCameraChange = (): void => {
-    if (this.controls.autoRotate || this.orbiting) return;
+    if (this.controls.autoRotate || this.orbiting || this.cameraDriven || this.cameraScripted) return;
     this.lastManualCameraAt = this.elapsed;
+  };
+
+  /** The angle and distance the viewer just chose become the follow rig. */
+  private onManualCameraEnd = (): void => {
+    this.captureFollowRig();
   };
 
   private onContextLost = (event: Event): void => {
@@ -2814,6 +2988,7 @@ export class SceneEngine {
     this.controller.setAnimator(null);
     this.controls.removeEventListener("start", this.onManualCamera);
     this.controls.removeEventListener("change", this.onManualCameraChange);
+    this.controls.removeEventListener("end", this.onManualCameraEnd);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointerup", this.onPointerUp);

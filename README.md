@@ -72,7 +72,10 @@ cd web && bun install && bun run dev
   into a stamped counter, so nothing can hide a square. Selection and moving keep working.
 - **Three engine strengths** running off the main thread, so the render loop never blocks.
 - **Showcase / attract mode** — let two engines duel on their own with pace control, pause,
-  auto-rematch, and a clean capture view with the entire interface hidden.
+  auto-rematch, and a clean capture view with the entire interface hidden. Three camera
+  behaviours: hold one angle, follow the figure on the move and close in on the fight, or
+  drift slowly around the board. The showcase also renders crisper than a played game —
+  no depth of field, softer grain, vignette and bloom.
 - **Auto-detected graphics presets** (Low → Ultra) with an automatic step-down if the
   measured frame rate stays low, plus WebGL context-loss recovery.
 - **Chess clocks**, undo, resign, flip board, copyable PGN, captured tray with material score.
@@ -122,7 +125,7 @@ Keyboard shortcuts (ignored while typing in a field):
 | --- | --- |
 | **Player vs Computer** | Pick your colour, an engine strength and an optional clock |
 | **Two players** | Hotseat on one screen; the camera swings round between turns (switchable) |
-| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch |
+| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera |
 | **Attract** | Leave the menu alone for 30 seconds and a showcase duel starts behind it |
 
 Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.

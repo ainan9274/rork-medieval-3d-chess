@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
+  Camera,
   Clapperboard,
+  Crosshair,
   EyeOff,
   Flag,
   LayoutGrid,
   Maximize,
+  Orbit,
   Pause,
   Play,
   Repeat,
@@ -22,7 +25,7 @@ import {
 
 import type { GameSnapshot, LedgerMove, PieceKind } from "../core/types";
 import { ARENA_LOOKS, ARENA_ORDER, type ArenaTheme } from "../scene/arena";
-import type { CameraPreset } from "../scene/sceneEngine";
+import type { CameraPreset, ShowcaseCamera } from "../scene/sceneEngine";
 import { Crest, Hourglass, pieceGlyph } from "./Heraldry";
 import { MoveLedger } from "./MoveLedger";
 
@@ -48,6 +51,8 @@ interface HudProps {
   onDemoSpeed: (speed: number) => void;
   onDemoLoop: (loop: boolean) => void;
   onDemoRestart: () => void;
+  showcaseCamera: ShowcaseCamera;
+  onShowcaseCamera: (mode: ShowcaseCamera) => void;
   onToggleCinema: () => void;
 }
 
@@ -56,6 +61,13 @@ const DEMO_SPEEDS: { label: string; value: number }[] = [
   { label: "1×", value: 1 },
   { label: "2×", value: 2 },
   { label: "4×", value: 4 },
+];
+
+/** Showcase camera behaviours, in the order they appear on the transport. */
+const SHOWCASE_CAMERAS: { key: ShowcaseCamera; label: string; hint: string; icon: typeof Camera }[] = [
+  { key: "still", label: "still", hint: "Hold one angle — the camera never moves on its own", icon: Camera },
+  { key: "follow", label: "follow", hint: "Track the figure on the move and close in on the fight", icon: Crosshair },
+  { key: "orbit", label: "orbit", hint: "Drift slowly around the board", icon: Orbit },
 ];
 
 const DIFFICULTY_SHORT: Record<string, string> = {
@@ -100,6 +112,8 @@ export function Hud({
   onDemoSpeed,
   onDemoLoop,
   onDemoRestart,
+  showcaseCamera,
+  onShowcaseCamera,
   onToggleCinema,
 }: HudProps) {
   const [chronicleOpen, setChronicleOpen] = useState(false);
@@ -440,6 +454,30 @@ export function Hud({
                 {option.label}
               </button>
             ))}
+          </div>
+
+          <div className="mc-demo-sep" />
+
+          {/* Camera behaviour: the duel is watched, so how it is shot matters as
+              much as how fast it is played. */}
+          <div className="flex items-center gap-1">
+            {SHOWCASE_CAMERAS.map((option) => {
+              const Icon = option.icon;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  className="mc-chip mc-demo-speed flex items-center gap-1.5"
+                  data-active={showcaseCamera === option.key}
+                  onClick={() => onShowcaseCamera(option.key)}
+                  title={option.hint}
+                  aria-pressed={showcaseCamera === option.key}
+                >
+                  <Icon size={12} />
+                  <span className="hidden sm:inline">{option.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="mc-demo-sep" />
