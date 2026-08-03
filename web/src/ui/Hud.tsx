@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Camera,
+  ChevronRight,
   Clapperboard,
   Crosshair,
   EyeOff,
@@ -118,6 +119,7 @@ export function Hud({
 }: HudProps) {
   const [chronicleOpen, setChronicleOpen] = useState(false);
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+  const [transportOpen, setTransportOpen] = useState(true);
   const [activePreset, setActivePreset] = useState<CameraPreset>(() =>
     snapshot.mode === "ai" && snapshot.playerColor === "b" ? "black" : "white",
   );
@@ -425,88 +427,115 @@ export function Hud({
         </button>
       </div>
 
-      {/* Showcase transport — small, centred at the foot of the screen so it
-          never covers a rank of the board. */}
+      {/* Showcase transport — a slim rail tucked into the bottom-right corner,
+          icon-only, and foldable down to a single sigil so the board is never
+          covered. */}
       {demo ? (
-        <div className="mc-demo-bar pointer-events-auto">
-          <button
-            type="button"
-            className="mc-demo-play"
-            onClick={onTogglePause}
-            title={snapshot.paused ? "Resume the showcase (Space)" : "Pause the showcase (Space)"}
-            aria-label={snapshot.paused ? "Resume the showcase" : "Pause the showcase"}
-          >
-            {snapshot.paused ? <Play size={15} /> : <Pause size={15} />}
-          </button>
-
-          <div className="mc-demo-sep" />
-
-          <div className="flex items-center gap-1">
-            {DEMO_SPEEDS.map((option) => (
+        <div className="mc-demo-dock pointer-events-auto">
+          {transportOpen ? (
+            <div className="mc-demo-bar">
               <button
-                key={option.label}
                 type="button"
-                className="mc-chip mc-demo-speed"
-                data-active={demo.speed === option.value}
-                onClick={() => onDemoSpeed(option.value)}
-                title={`Play at ${option.label}`}
+                className="mc-demo-play"
+                data-paused={snapshot.paused || undefined}
+                onClick={onTogglePause}
+                title={snapshot.paused ? "Resume the showcase (Space)" : "Pause the showcase (Space)"}
+                aria-label={snapshot.paused ? "Resume the showcase" : "Pause the showcase"}
               >
-                {option.label}
+                {snapshot.paused ? <Play size={13} /> : <Pause size={13} />}
               </button>
-            ))}
-          </div>
 
-          <div className="mc-demo-sep" />
+              <div className="mc-demo-sep" />
 
-          {/* Camera behaviour: the duel is watched, so how it is shot matters as
-              much as how fast it is played. */}
-          <div className="flex items-center gap-1">
-            {SHOWCASE_CAMERAS.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  className="mc-chip mc-demo-speed flex items-center gap-1.5"
-                  data-active={showcaseCamera === option.key}
-                  onClick={() => onShowcaseCamera(option.key)}
-                  title={option.hint}
-                  aria-pressed={showcaseCamera === option.key}
-                >
-                  <Icon size={12} />
-                  <span className="hidden sm:inline">{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
+              <div className="flex items-center gap-[0.15rem]">
+                {DEMO_SPEEDS.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className="mc-chip mc-demo-speed"
+                    data-active={demo.speed === option.value}
+                    onClick={() => onDemoSpeed(option.value)}
+                    title={`Play at ${option.label}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
 
-          <div className="mc-demo-sep" />
+              <div className="mc-demo-sep" />
 
-          <button
-            type="button"
-            className="mc-chip mc-demo-speed flex items-center gap-1.5"
-            data-active={demo.autoRematch}
-            onClick={() => onDemoLoop(!demo.autoRematch)}
-            title="Start a fresh duel when this one ends"
-            aria-pressed={demo.autoRematch}
-          >
-            <Repeat size={12} /> loop
-          </button>
-          <button
-            type="button"
-            className="mc-chip mc-demo-speed flex items-center gap-1.5"
-            onClick={onDemoRestart}
-            title="Restart the duel now"
-          >
-            <RotateCw size={12} /> new duel
-          </button>
+              {/* Camera behaviour: the duel is watched, so how it is shot matters
+                  as much as how fast it is played. Icons only — the label lives
+                  in the tooltip. */}
+              <div className="flex items-center gap-[0.15rem]">
+                {SHOWCASE_CAMERAS.map((option) => {
+                  const Icon = option.icon;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className="mc-chip mc-demo-icon"
+                      data-active={showcaseCamera === option.key}
+                      onClick={() => onShowcaseCamera(option.key)}
+                      title={`${option.label} — ${option.hint}`}
+                      aria-label={`Camera: ${option.label}`}
+                      aria-pressed={showcaseCamera === option.key}
+                    >
+                      <Icon size={13} />
+                    </button>
+                  );
+                })}
+              </div>
 
-          <div className="mc-demo-sep hidden sm:block" />
+              <div className="mc-demo-sep" />
 
-          <span className="mc-display hidden items-center gap-1.5 text-[0.58rem] tracking-[0.22em] text-[#a89268] sm:flex">
-            <Clapperboard size={12} />
-            {DIFFICULTY_SHORT[demo.white] ?? demo.white} vs {DIFFICULTY_SHORT[demo.black] ?? demo.black}
-          </span>
+              <button
+                type="button"
+                className="mc-chip mc-demo-icon"
+                data-active={demo.autoRematch}
+                onClick={() => onDemoLoop(!demo.autoRematch)}
+                title="Loop — start a fresh duel when this one ends"
+                aria-label="Loop duels"
+                aria-pressed={demo.autoRematch}
+              >
+                <Repeat size={13} />
+              </button>
+              <button
+                type="button"
+                className="mc-chip mc-demo-icon"
+                onClick={onDemoRestart}
+                title={`New duel — ${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
+                  DIFFICULTY_SHORT[demo.black] ?? demo.black
+                }`}
+                aria-label="Restart the duel"
+              >
+                <RotateCw size={13} />
+              </button>
+
+              <button
+                type="button"
+                className="mc-demo-fold"
+                onClick={() => setTransportOpen(false)}
+                title="Hide the transport"
+                aria-label="Hide the showcase transport"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="mc-demo-tab"
+              data-paused={snapshot.paused || undefined}
+              onClick={() => setTransportOpen(true)}
+              title={`Showcase controls — ${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
+                DIFFICULTY_SHORT[demo.black] ?? demo.black
+              }${snapshot.paused ? " (paused)" : ""}`}
+              aria-label="Show the showcase transport"
+            >
+              <Clapperboard size={14} />
+            </button>
+          )}
 
           {snapshot.paused ? <span className="mc-demo-flag mc-pulse">PAUSED</span> : null}
           {snapshot.status === "over" && demo.autoRematch ? (
