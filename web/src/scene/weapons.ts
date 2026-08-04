@@ -57,7 +57,7 @@ type WeaponId =
   // Grande Armée
   | "imperialSabre"
   | "eagleStaff"
-  | "marshalBaton"
+  | "marksmanRifle"
   | "cavalrySabre"
   | "musketBayonet"
   | "officerPistol"
@@ -783,23 +783,43 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     ],
   },
   /**
-   * Marshal of the Empire: the short velvet baton of office, gold-capped and
-   * eagle-tipped. Short enough to keep the marshal's silhouette narrow, and the
-   * cap is where his artillery order is signalled from.
+   * The Empire's marksman: a rifled long arm — a full-stocked piece with a
+   * browned barrel half again as long as the line's musket, brass furniture, a
+   * cheek piece on the butt and no bayonet at all. Nothing about it is
+   * ceremonial: it is the longest barrel on the board and the only weapon here
+   * with sights, which is the whole point of the rank from a top-down camera.
    */
-  marshalBaton: {
-    grip: 0.12,
-    focus: 0.36,
-    aim: new THREE.Vector3(-0.03, 1, 0.09),
-    offset: new THREE.Vector3(0.02, 0, 0.03),
+  marksmanRifle: {
+    grip: 0.26,
+    // Barrel mouth, inside the brass nose cap.
+    muzzle: new THREE.Vector3(0, 0.835, 0),
+    aim: new THREE.Vector3(-0.03, 1, 0.06),
+    offset: new THREE.Vector3(0.018, 0, 0.028),
     build: () => [
-      { geometry: shaft(0.3, 0.018, 0.018), role: "cloth" },
-      { geometry: shaft(0.03, 0.023), role: "gold" },
-      { geometry: ring(0.023, 0.007, 0.062), role: "gold" },
-      { geometry: ring(0.023, 0.007, 0.238), role: "gold" },
-      { geometry: shaft(0.035, 0.023).translate(0, 0.28, 0), role: "gold" },
-      ...eagleParts(0.062, 0.355, "gold"),
-      { geometry: ball(0.013, 0.352, 0, 0.036), role: "gem" },
+      // Full walnut stock, butt on the ground end, wrist under the lock.
+      { geometry: box(0.032, 0.34, 0.058, 0.175), role: "wood" },
+      { geometry: box(0.036, 0.055, 0.08, 0.026), role: "wood" },
+      { geometry: box(0.04, 0.026, 0.084, 0.005), role: "gold" },
+      // Cheek piece: what says "rifle" rather than "musket" in silhouette.
+      { geometry: box(0.015, 0.055, 0.05, 0.11, 0.022), role: "wood" },
+      // Lock, cock and trigger guard.
+      { geometry: box(0.031, 0.082, 0.052, 0.27), role: "gold" },
+      { geometry: box(0.014, 0.038, 0.02, 0.318, 0, -0.024), role: "steel" },
+      { geometry: box(0.014, 0.016, 0.034, 0.238, 0, 0.026), role: "gold" },
+      { geometry: ring(0.019, 0.007, 0.216), role: "leather" },
+      // Barrel, ramrod in its channel underneath, and the brass bands.
+      { geometry: shaft(0.5, 0.0125, 0.011).translate(0, 0.335, 0), role: "steel" },
+      { geometry: shaft(0.42, 0.005).translate(0, 0.35, 0).translate(0, 0, 0.02), role: "wood" },
+      { geometry: ring(0.017, 0.006, 0.42), role: "gold" },
+      { geometry: ring(0.017, 0.006, 0.58), role: "gold" },
+      { geometry: ring(0.017, 0.006, 0.74), role: "gold" },
+      // Sights, fore and aft — the detail the rank is read by.
+      { geometry: box(0.024, 0.016, 0.018, 0.362), role: "steel" },
+      { geometry: box(0.009, 0.018, 0.014, 0.8), role: "steel" },
+      { geometry: ring(0.016, 0.005, 0.825), role: "gold" },
+      // Sling: a strap slung from the butt swivel up to the middle band.
+      { geometry: box(0.012, 0.4, 0.011, 0.4, 0, -0.03), role: "leather" },
+      { geometry: ring(0.015, 0.005, 0.19), role: "leather" },
     ],
   },
   /** Cuirassier: the heavy straight-backed cavalry sabre, brass bowl guard. */
@@ -958,7 +978,9 @@ const LOADOUT: Record<ArsenalId, Record<PieceKind, Loadout>> = {
     // leave him aiming a blade with the gun forgotten at his hip.
     k: { main: "officerPistol", off: "imperialSabre" },
     q: { main: "eagleStaff" },
-    b: { main: "marshalBaton" },
+    // The marshal is the army's marksman: a rifled long arm and no staff of
+    // office at all. His whole beat is fought from one knee, at range.
+    b: { main: "marksmanRifle" },
     n: { main: "cavalrySabre" },
     // Nothing in either fist: the gun is the weapon, and a rammer held like a
     // maul made the crew read as a brawler standing next to its own artillery.

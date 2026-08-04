@@ -178,13 +178,14 @@ const RANGED_KINDS: PieceKind[] = ["q", "b"];
  * - `gun` — level a barrel and fire (see {@link GUNS}).
  *
  * The Grande Aréme is the one army that fights with powder: its Emperor settles
- * matters with a flintlock, its line infantry with a musket volley and its
- * battery with the field gun it hauls. Only the cuirassier still closes, sabre
- * first — which is exactly what a cavalryman is for.
+ * matters with a flintlock, its marshal with a rifle from one knee, its line
+ * infantry with a musket volley and its battery with the field gun it hauls.
+ * Only the cuirassier still closes, sabre first — which is exactly what a
+ * cavalryman is for.
  */
 type AttackStyle = "melee" | "spell" | "gun";
 
-const GUNPOWDER_KINDS: PieceKind[] = ["k", "r", "p"];
+const GUNPOWDER_KINDS: PieceKind[] = ["k", "b", "r", "p"];
 
 function attackStyle(kind: PieceKind, arsenal: ArsenalId): AttackStyle {
   if (arsenal === "empire" && GUNPOWDER_KINDS.includes(kind)) return "gun";
@@ -387,7 +388,7 @@ interface GunProfile {
 }
 
 /**
- * The three barrels of the Grande Armée, in order of what they are worth.
+ * The four barrels of the Grande Armée, in order of what they are worth.
  *
  * The pistol is deliberately the quietest kill on the board — the Emperor does
  * not need spectacle — and the field gun is by far the loudest thing in the
@@ -442,23 +443,26 @@ const GUNS: Record<PieceKind, GunProfile> = {
     hold: 0.12,
     aftershock: 0.32,
   },
-  // Never reached — the cuirassier charges, and the court fights with fire.
-  q: {
-    zoom: 6,
-    aim: 0.16,
-    calibre: 0.4,
-    flash: 0.55,
-    ball: 0.07,
-    speed: 0.03,
+  // Rifled long arm, fired from one knee: the longest held breath on the board
+  // and the flattest, fastest ball. Less flame and less smoke than the line's
+  // musket — a marksman is a single clean crack, not a volley.
+  b: {
+    zoom: 8.5,
+    aim: 0.34,
+    calibre: 0.5,
+    flash: 0.5,
+    ball: 0.068,
+    speed: 0.021,
     smoke: 5,
-    blast: 1,
+    blast: 1.2,
     kick: 0.06,
     recoil: 0,
     wave: null,
-    hold: 0.05,
+    hold: 0.08,
     aftershock: 0,
   },
-  b: {
+  // Never reached — the cuirassier charges, and the court fights with fire.
+  q: {
     zoom: 6,
     aim: 0.16,
     calibre: 0.4,

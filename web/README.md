@@ -156,7 +156,7 @@ under `kg.armies`:
 | --- | --- | --- |
 | `ivory` | Ivory Kingdom — King, Queen, Mage, Knight, Guardian, Footman | `kingdom` |
 | `sun` | Sun Empire — Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | `sun` |
-| `empire` | Grande Armée — Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | `empire` |
+| `empire` | Grande Armée — Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` |
 
 One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five or six
 clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
@@ -176,9 +176,9 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the aim, and the hit frame is the shot |
+| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the aim — the marshal's is a drop onto one knee with the rifle levelled — and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
-| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée's king, rook and pawn carry one |
+| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée's king, bishop, rook and pawn carry one — the bishop's is a kneeling reload, the rook's is served at the muzzle |
 
 How it is wired (`src/scene/pieces.ts`):
 

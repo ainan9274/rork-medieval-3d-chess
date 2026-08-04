@@ -180,19 +180,19 @@ a set of death cries.
 | --- | --- | --- | --- |
 | `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
 | `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
-| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, marshal's baton, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, rifled long arm with sights and sling, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
 
 The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
 breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
 bicorne and dress sabre, the commander's laurel crown and eagle staff, the marshal's plumed hat
-and coat tails, the cuirassier's horsehair-crested helmet over a steel breastplate, the
-artillery guard's bearskin behind the field gun he hauls, and the infantry's musket — the longest
-silhouette on the board. **This is the one army that fights with powder** (see [Gunpowder
-combat](#gunpowder-combat-pistol-musket-and-field-gun)): Napoléon settles matters with the
-flintlock in his fist, the line infantry fires a volley, and the battery lays and serves the gun
-it drags along. Only the cuirassier still closes, sabre first. The two casting ranks keep their
-own range: the commander signals the volley from her square, the marshal orders it with his
-baton.
+and coat tails over the longest barrel on the board, the cuirassier's horsehair-crested helmet
+over a steel breastplate, the artillery guard's bearskin behind the field gun he hauls, and the
+infantry's musket. **This is the one army that fights with powder** (see [Gunpowder
+combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)): Napoléon settles matters with the
+flintlock in his fist, the marshal drops to one knee and takes the shot with a rifle, the line
+infantry fires a volley, and the battery lays and serves the gun it drags along. Only the
+cuirassier still closes, sabre first, and only the Imperial Commander still fights with fire —
+she signals the volley from her own square.
 
 Swapping an army re-downloads its rosters, so the swap waits for any fight on screen to finish,
 takes the old figures down and stands the new ones up (a second or two on a cold cache). Give
@@ -345,9 +345,9 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the aim, and the hit frame is the shot |
+| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the aim (the marshal's is a drop onto one knee), and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
-| `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's three gunpowder ranks carry one |
+| `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's four gunpowder ranks carry one; the marshal reloads still kneeling, the battery at the muzzle |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -451,17 +451,19 @@ instead of a recompile, and the pool is empty on presets without post-processing
 The capture dissolve is a shader injection: a noise field eats the body from the soles up with
 a glowing burn edge, while the whole mesh fades and sheds upward-drifting motes.
 
-### Gunpowder combat (pistol, musket and field gun)
+### Gunpowder combat (pistol, rifle, musket and field gun)
 
 The Grande Armée does not fight with witchfire. `attackStyle(kind, arsenal)` in
-`src/scene/sceneEngine.ts` routes captures by its **king, rook and pawn** to
-`playGunCinematic()`; the commander and marshal keep the spell beat, and the cuirassier still
+`src/scene/sceneEngine.ts` routes captures by its **king, bishop, rook and pawn** to
+`playGunCinematic()`; only the Imperial Commander keeps the spell beat, and the cuirassier still
 closes with the sabre. The beat is:
 
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
    or a linstock is heard (`audio.gunLock`) as the barrel comes round.
-2. The strike clip *is* the aim — Napoléon's quick draw, the infantry's shoulder-and-fire, the
-   gun crew's step in to the trail — and the shot leaves on its hit frame.
+2. The strike clip *is* the aim — Napoléon's quick draw, the marshal's drop onto one knee with
+   the rifle levelled, the infantry's shoulder-and-fire, the gun crew's step in to the trail —
+   and the shot leaves on its hit frame. Because the muzzle marker is read out of the live pose,
+   the kneeling shot leaves the barrel at the height the knee put it, not at standing height.
 3. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
    `spawnPowderCloud()` leaves a bank of dirty smoke hanging in front of the gun, and
    `audio.gunshot()` fires the report.
@@ -473,9 +475,12 @@ closes with the sabre. The beat is:
    the barrel is charged again before `glide()` walks the shooter onto the cleared square.
 
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
-board — a dry crack, a puff of smoke, no spectacle. The musket is a hard crack over a chest
-thump and a real bank of white smoke. The field gun is the loudest thing in the hall, louder than
-the crown's judgement: a sub-bass slam with the report coming back off the far wall.
+board — a dry crack, a puff of smoke, no spectacle. The marshal's rifle is the longest held
+breath (0.34 s of aim, the deepest lens punch-in) and the flattest, fastest ball, with less flame
+and less smoke than the line's musket: a marksman is one clean crack, not a volley. The musket is
+a hard crack over a chest thump and a real bank of white smoke. The field gun is the loudest
+thing in the hall, louder than the crown's judgement: a sub-bass slam with the report coming back
+off the far wall.
 
 The piece is not nudged by its own charge, it is **thrown** (`gunRecoil()` →
 `PieceView.setTrainRecoil(back, lift)`): the wheels leave the stone and the muzzle jumps in under

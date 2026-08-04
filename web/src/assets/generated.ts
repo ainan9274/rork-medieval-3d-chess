@@ -216,12 +216,22 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       death: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-dying-backwards.glb`,
       walk: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-casual-walk-inplace.glb`,
     },
+    // The Empire's marksman. He carries no staff and casts nothing: the rifle
+    // comes up, he goes down on one knee, and the shot is taken from there.
+    //   * stance  — rifle at the ready, lowered and raised as he scans the hall
+    //   * strike  — down on a knee, barrel levelled, fired from the kneel
+    //   * stride  — rifle carried across the body at the advance
+    //   * reload  — powder and ball, still on the knee he fired from
+    // Alternatives on the same rig: `...-anim-crouchlookaroundbow.glb` (waits
+    // out the turn kneeling), `...-anim-combat-stance.glb` (bare-fisted guard),
+    // `...-anim-charged-spell-cast-1.glb` (the old staff-of-office cast).
     b: {
       rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
-      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-charged-spell-cast-1.glb`,
+      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb`,
+      attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-female-crouch-pick-gun-point-forward.glb`,
       death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
-      walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-spear-walk-inplace.glb`,
+      walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb`,
+      reload: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneeling-reload.glb`,
     },
     n: {
       rigged: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-rigged.glb`,
@@ -365,11 +375,11 @@ export const ARMY_SKINS: Record<ArmySkinId, ArmySkin> = {
   empire: {
     id: "empire",
     label: "Grande Armée",
-    blurb: "Napoleonic France — navy and gold, sabres, muskets and cannon.",
+    blurb: "Napoleonic France — navy and gold, rifles, muskets and cannon.",
     ranks: {
       k: "Napoléon",
       q: "Imperial Commander",
-      b: "Marshal",
+      b: "Marshal-Tirailleur",
       n: "Cuirassier",
       r: "Artillery Guard",
       p: "Line Infantry",
