@@ -246,10 +246,11 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal stands at the ready with the rifle lowered — he used to wait out the *whole game* on one knee, which read as a man permanently in cover; the kneel is worth something only as the thing he does to take a shot |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way. The stride length inside the clip is **measured** (`gaitCycle()`): the generator returns anything from one cycle (`spear-walk`, 1.13 s) to three (`casual-walk`, 4.23 s). It must still be a walk — a sprint cycle stretched over one square judders instead of marching, which is why the line infantry advances on the musket-across-the-body walk rather than the rifle charge on the same rig |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire — except under the `empire` arsenal, where the commander draws and shoots instead; for the Grande Armée's gunpowder ranks it is the **firing drill** — the marshal's is a drop onto one knee with the rifle levelled — played at its own readable length (`GUNS[kind].drill`), and the hit frame is the shot |
+| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire — except under the `empire` arsenal, where the commander draws and shoots instead; for the Grande Armée's **standing** gunpowder ranks it is the **firing drill**, played at its own readable length (`GUNS[kind].drill`) with the hit frame on the shot. The marshal-tirailleur carries **no** `attack` at all — he fires out of his kneeling `aim` (see Ranged captures) |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
-| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée carries one — the bishop's is a kneeling reload, the rook's is served at the muzzle, the king's and the commander's are done standing |
-| `aim` | Looping sight picture held *before* the shot: the weapon comes up and stays on the body while the shooter settles (`PieceView.playAim()`). Napoléon (pistol levelled), the Imperial Commander, the line infantry (musket into the shoulder) and the marshal (**down onto one knee**, rifle up and scanning) all carry one; only the battery has none — laying the gun already is its aim |
+| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée carries one — the marshal's is a kneeling reload served from the knee he fired from, the rook's is at the muzzle, the king's and the commander's are done standing |
+| `rise` | One-shot stance change between one knee and both feet, authored kneeling→standing and played in **both** directions: reversed by `playKneel()` to go down onto the knee, forwards by `playRise()` to come back up. Only the marshal has one. Measured on the hips it opens at 48 units and stands at 92 by the 70% mark, so `RISE_SPAN` runs both directions over that part and never shows the still tail |
+| `aim` | Looping sight picture held *before* — and, for a kneeling gunner, **through** — the shot: the weapon comes up and stays on the body while the shooter settles (`PieceView.playAim()`). Napoléon (pistol levelled), the Imperial Commander, the line infantry (musket into the shoulder) and the marshal (on one knee, rifle up and scanning) all carry one; only the battery has none — laying the gun already is its aim. `setAimDrift()` slows the lateral scan almost to a stop once the shot is away, so a man who has fired watches what he hit instead of going back to sweeping the board |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -333,12 +334,28 @@ caster takes a single step** onto the square.
 The Grande Armée's ranks fight the same distance with powder instead (`playGunCinematic()`). That
 beat is **aim → drill → trigger → shot**: the `aim` clip is held for `GUNS[kind].aim` seconds so the barrel is
 seen coming up on the body, then the firing clip runs at its own length with the report on its own
-frame (`GUNS[kind].drill = { seconds, impact }` — the marshal's is 1.7 s firing at 0.6, where the
-swordsman default made the whole kneel-level-fire drill flash past in a third of a second). The
-marshal's kneel lives in his `aim` clip, so the drop onto the knee is the first beat of the shot and
-the strike grows out of the pose; his reload is served from the same knee and the stance brings him
-back to his feet afterwards. Every barrel is framed the same way — a modest lens punch-in held over
-the beat — since the rifle's sight-picture overlay and its extra zoom were removed.
+frame (`GUNS[kind].drill = { seconds, impact }`). Every barrel is framed the same way — a modest lens
+punch-in held over the beat — since the rifle's sight-picture overlay and its extra zoom were removed.
+
+**One stance per shot** (`GUNS[kind].stance`). The profile states whether the shot is taken standing or
+from one knee, and that decides *which pose the gun is fired from*:
+
+- **Standing gunners** play their firing drill — those clips start and end on their feet, so the drill
+  agrees with the stance around it.
+- **The marshal-tirailleur kneels, and gets no firing clip.** His rig's shooting take is
+  `Female_Crouch_Pick_Gun_Point_Forward`, whose name is a trap: measured on the hips it opens at 92
+  units (standing), dips to 68 and is back at 93 by the 70% mark, so its authored ignition frame at
+  0.6 lands with the man **upright**. Run between a kneeling `aim` (hips 48) and a kneeling `reload`
+  (42) it stood him up to fire and dropped him again — three stance flips inside one shot, which is
+  what read as bobbing up and down. His beat is now **drop → hold → fire → die → reload → rise**:
+  `playKneel()` puts him down over `stance.drop` (0.85 s, the rise clip reversed, so the knee plants
+  instead of the body sinking), the sights are held for `aim` (0.55 s), the trigger and report are
+  timed off `drill` **out of that held aim**, the recoil rocks him where he kneels, the victim dies,
+  the reload is served from the same knee, and only then does `riseToFeet()` bring him up
+  (`playRise()`, ~0.95 s, with the boot heard taking his weight) before he marches onto the square.
+  From the knee going down to the body being cleared, his stance never changes.
+- `reload()` hands only a **standing** gunner back to his stance; standing a kneeling one up there
+  would drop a stance change into the middle of the one beat meant to hold still.
 
 **Each barrel fires its own round** (`SHOT_MODELS` for the sculpts, `src/scene/ammunition.ts` for the
 procedural fallbacks, chosen by `GUNS[kind].ammo`). Every round is a real mesh normalised

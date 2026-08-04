@@ -374,10 +374,11 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal **stands at the ready**, rifle lowered: he used to hold a kneeling stance for the entire game, which read as a man permanently stuck in cover, so the kneel moved into the one place it is worth something — his `aim` |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way. The clip's own stride length is **measured** rather than assumed (`gaitCycle()`), because the generator hands back anything from one cycle (`spear-walk`, 1.13 s) to three (`casual-walk`, 4.23 s). It must still be a *walk*: a 0.5 s sprint cycle stretched across a single square reads as juddering on the spot, which is why the line infantry advances on the musket-across-the-body walk instead of the rifle charge that sits on the same rig |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the **firing drill** (the marshal's is a drop onto one knee), played at its own readable length, and the hit frame is the shot |
+| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's **standing** gunpowder ranks it is the **firing drill**, played at its own readable length with the hit frame on the shot. The marshal carries **no** `attack` at all — he fires out of his kneeling `aim` (see *Gunpowder combat*) |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
-| `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's four gunpowder ranks carry one; the marshal reloads still kneeling, the battery at the muzzle |
-| `aim` | Looping **sight picture** held before a shot: the weapon comes up and stays on the body while the shooter settles. Napoléon (pistol levelled), the line infantry (musket into the shoulder, barrel tracking the man) and the marshal (**down onto one knee**, rifle up and scanning) carry one; only the battery has none — laying the gun already *is* its aim |
+| `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's four gunpowder ranks carry one; the marshal reloads still on the knee he fired from, the battery at the muzzle |
+| `rise` | One-shot stance change between one knee and both feet. Authored kneeling→standing and played in **both directions**: reversed (`playKneel()`) it puts the marshal down onto the knee, forwards (`playRise()`) it brings him back up. Only he has one — measured on the hips it opens at 48 units and stands at 92 by the 70% mark, so `RISE_SPAN` runs both directions over that part and never shows the still tail |
+| `aim` | Looping **sight picture** held before — and, for a kneeling gunner, *through* — a shot: the weapon comes up and stays on the body while the shooter settles. Napoléon (pistol levelled), the line infantry (musket into the shoulder, barrel tracking the man) and the marshal (on one knee, rifle up and scanning) carry one; only the battery has none — laying the gun already *is* its aim. `setAimDrift()` slows the lateral scan almost to a stop once the shot is away, so a man who has fired watches what he hit rather than going back to sweeping the board |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -523,40 +524,55 @@ still closes with the sabre. The beat is:
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
    or a linstock is heard (`audio.gunLock`) as the barrel comes round — that is the hammer being
    *cocked*, a beat before the trigger is anywhere near it.
-2. **Taking aim.** `PieceView.playAim()` loops the sight picture for `GUNS[kind].aim` seconds
-   (0.3–0.62 s): the weapon is brought up and *held* on the body. For the marshal this is also the
-   drop onto one knee — his hold is the longest on the board so the knee actually reaches the stone
-   before the drill starts. A rank with no aim clip leans into the shot by hand instead, so a gunner
-   is always visibly aiming before anything is fired.
-3. **The drill.** The strike clip is then played at its own readable length —
-   `GUNS[kind].drill = { seconds, impact }` — and the shot leaves on the frame the hammer falls
-   (`impact`, 0.5–0.64 of the clip) rather than at the swordsman's default 0.42. This matters: at
-   the default *length* the marshal's kneel-level-fire drill was over in a third of a second and
-   the shot read as a flash appearing out of a stance. His is still the longest beat on the board
-   (1.7 s, firing at 0.6) — it was 2.1 s only because it had a full-screen sight picture to fill.
-   Because the muzzle marker is read out of the live pose, the kneeling shot leaves the barrel at
-   the height the knee put it, not at standing height.
-4. **The trigger breaks**, `GUNS[kind].lock` seconds before the charge lights. `audio.triggerPull()`
+2. **Down onto the knee**, for a gunner whose `GUNS[kind].stance` says he fights off the stone (the
+   marshal alone). `PieceView.playKneel()` runs his `rise` clip **backwards** over `stance.drop`
+   (0.85 s), so the knee is planted by an articulated motion rather than the body being blended
+   downwards, and the stone is heard taking his weight on the frame he reaches it.
+3. **Taking aim.** `PieceView.playAim()` loops the sight picture for `GUNS[kind].aim` seconds
+   (0.3–0.55 s): the weapon is brought up and *held* on the body. A rank with no aim clip leans into
+   the shot by hand instead, so a gunner is always visibly aiming before anything is fired.
+4. **The drill — or the held kneel.** A **standing** gunner plays his firing clip at its own readable
+   length (`GUNS[kind].drill = { seconds, impact }`), the shot leaving on the frame the hammer falls
+   (`impact`, 0.5–0.64 of the clip) rather than at the swordsman's default 0.42; at the default
+   *length* a firing drill was over in a third of a second and the shot read as a flash appearing out
+   of a stance.
+
+   A **kneeling** gunner plays no firing clip at all, and this is the whole point of `stance`. Every
+   shooting take the generator produces starts and ends on its feet — the marshal's
+   `Female_Crouch_Pick_Gun_Point_Forward` measures, on the hips, 92 units (standing) → 68 → back to 93
+   by the 70% mark, so its authored ignition frame at 0.6 fires with the man **upright**. Run between
+   a kneeling `aim` (hips 48) and a kneeling `reload` (42) it stood him up to shoot and dropped him
+   again: three stance flips inside one shot, which is exactly what read as bobbing up and down. So
+   he fires **out of the held kneel**, and `drill` becomes purely the beat — 1.02 s of held sights
+   before the trigger, the longest wait on the board. Because the muzzle marker is read out of the
+   live pose, the shot still leaves the barrel at the height the knee put it.
+5. **The trigger breaks**, `GUNS[kind].lock` seconds before the charge lights. `audio.triggerPull()`
    plays the sear letting go, the flint raking down the frizzen and the priming charge catching — the
    mechanical half of a shot (see *Lock time*).
-5. One lock time later the gun answers: `spawnMuzzleFlash()` detonates the charge at the barrel
+6. One lock time later the gun answers: `spawnMuzzleFlash()` detonates the charge at the barrel
    mouth (see *The flash at the bore*), `spawnPowderCloud()` leaves a bank of smoke hanging in front
    of the gun — soot for a smoothbore, pale ash grey for the rifle (see *The powder bank*) —
    `boreTrickle()` keeps the barrel smoking in the man's hands afterwards, and `audio.gunshot()`
    fires the report on the same frame as the flash.
-6. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
+7. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
    separates a gun from a lobbed spell — trailing wisps of smoke as it goes. A ball out of a
    *smoothbore* bellies off the line of sight and comes back onto the body (see below); the rifled
    round is the only one that flies a true line.
-7. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
+8. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
    by a thud into the body), then flash, sparks, tile strike, camera kick, and for the field gun a
    wave rolling out across the stone plus a long aftershock. The body **breaks open** where the round
    went in — a punch ring square to the flight line, a cone of spall thrown back at the shooter and a
    field of tumbling chips made of the victim's own material (see *The moment the round arrives*).
    **Solid shot does not stop in the man**: a second short flight carries the iron a tile and a half
    past him and skips it off the stone, throwing stone chips and a ricochet spark shower.
-8. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
-   the barrel is charged again before `glide()` walks the shooter onto the cleared square.
+9. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
+   the barrel is charged again before `glide()` walks the shooter onto the cleared square. The
+   kneeling gunner's reload is served **from the knee he fired from** — `reload()` hands only a
+   standing gunner back to his stance — and once the body is cleared `riseToFeet()` brings him up on
+   the forward `rise` clip (~0.95 s, the boot heard taking his weight) before he marches. Between the
+   knee going down and the square being empty his stance never changes once; the sight picture is
+   also slowed almost to a stop at the report (`setAimDrift()`), so he holds what he shot at instead
+   of sweeping the board again.
 
 ### The ammunition
 
@@ -873,9 +889,19 @@ The reason is that the two effects were competing for the same moment. The overl
 — and the drill had to be stretched to 2.1 s to give the tube something to fill. What reads as a
 marksman is far simpler: **he drops onto one knee to take the shot, and only then.** That kneel used
 to be his permanent stance (a figure crouched behind cover for an entire game, which is why nothing
-about the shot looked like an act of aiming); it now lives in his `aim` clip, so the sequence is
-stand → kneel → level → fire → reload on the knee → back on his feet, all of it in world space where
-the rest of the hall is.
+about the shot looked like an act of aiming), so the sequence is now
+stand → kneel → level → fire → reload on the knee → up onto his feet → march, all of it in world
+space where the rest of the hall is.
+
+**And he holds that kneel for the whole shot.** Getting the kneel into the beat was only half the
+job: the pose then had to survive it. Between a kneeling `aim` and a kneeling `reload` sat a *firing*
+clip that measures, on the hips, standing → crouch → standing, with its ignition frame on the way
+back up — so the man stood to fire and dropped twice per shot, and a beat built around one clean
+kneel read as bobbing. Nothing in a clip's name tells you this; only its hip track does. The
+kneeling shot therefore has **no firing clip** and is fired out of the held aim, `GUNS.b.stance`
+declares the kneel so the engine knows which pose owns the shot, and the two stance changes that are
+left are real motions off one generated take — `Kneel_on_One_Knee_and_Stand` reversed to go down,
+forwards to come up — rather than crossfades between two heights.
 
 **The gun goes where the arms go.** A prop parented to a hand bone at a fixed body-space angle
 suits a sabre worn point-up, but it leaves a rifle standing straight up through an aiming clip.

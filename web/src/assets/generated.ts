@@ -97,6 +97,15 @@ export interface PieceAnimationSet {
    * carries one — it is what makes a kill at range read as aimed.
    */
   aim?: string;
+  /**
+   * One-shot change of stance between the knee and the feet: the clip starts on
+   * one knee and ends standing at full height. Only a figure that fights from a
+   * kneel needs it, and it is played in *both* directions — forwards to come up
+   * off the knee once the shot is over, backwards to go down onto it in the
+   * first place (see `PieceView.playKneel`). One download, two motions, and the
+   * kneel he rises out of is by construction the kneel he dropped into.
+   */
+  rise?: string;
 }
 
 const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
@@ -249,21 +258,30 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     //     the board. He used to *wait out the whole game* on one knee, which
     //     read as a man permanently crouched behind cover; the kneel is worth
     //     something only if it is the thing he does when he takes a shot.
-    //   * aim     — down onto the knee, rifle up, scanning the body across the
-    //     board: the drop into the kneel is now the first beat of the shot, and
-    //     it is the same kneel the strike fires from, so the shot grows out of
-    //     the pose instead of restaging it.
-    //   * strike  — barrel levelled from that kneel and fired
+    //   * rise    — the knee going down and coming back up, played backwards
+    //     and then forwards around the shot (see {@link PieceAnimationSet.rise})
+    //   * aim     — held on the knee: rifle up, head over the sights, scanning
+    //     the body across the board. This is the pose he *fires from*: the
+    //     kneeling shot has no strike clip at all (see below).
     //   * stride  — rifle carried across the body at the advance
-    //   * reload  — powder and ball, still on the knee he fired from, and he
-    //     comes back up to his feet with the stance afterwards
+    //   * reload  — powder and ball, still on the knee he fired from; he only
+    //     comes back up to his feet afterwards, once the body is cleared
+    //
+    // No `attack`. This rig's shooting take is `Female_Crouch_Pick_Gun_Point_
+    // Forward`, and its name is a trap: measured on the hips it starts at 92
+    // units (standing), dips to 68, and is back up at 93 by the 70% mark — the
+    // authored ignition frame at 0.6 lands with the man on his *feet*. Played
+    // between a kneeling aim (hips 48) and a kneeling reload (hips 42) it made
+    // the marksman stand up to fire and drop back down twice per shot. So the
+    // kneeling gunner keeps the kneel and fires out of the held aim instead;
+    // the clip stays off this roster rather than being loaded and skipped.
     // Alternatives on the same rig: `...-anim-combat-stance.glb` (bare-fisted
     // guard), `...-anim-charged-spell-cast-1.glb` (the old staff cast).
     b: {
       rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
       idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb`,
       aim: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb`,
-      attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-female-crouch-pick-gun-point-forward.glb`,
+      rise: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneel-on-one-knee-and-stand.glb`,
       death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
       walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb`,
       reload: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-kneeling-reload.glb`,

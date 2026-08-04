@@ -217,6 +217,13 @@ export interface PieceClips {
    * shot read as aimed rather than as a flash appearing out of a stance.
    */
   aim?: THREE.AnimationClip;
+  /**
+   * One-shot stance change between one knee and both feet. Authored kneeling to
+   * standing, and played in both directions: forwards to come up off the knee,
+   * backwards to go down onto it (see {@link PieceView.playKneel} and
+   * {@link PieceView.playRise}). Only a figure that fights from a kneel has one.
+   */
+  rise?: THREE.AnimationClip;
 }
 
 export type ClipName = keyof PieceClips;
@@ -229,7 +236,18 @@ export type ClipName = keyof PieceClips;
  * before it plays (see {@link PieceFactory.ensureClip}), so they can never be
  * missed — a stride, until now, could be.
  */
-export const CLIP_ORDER: ClipName[] = ["idle", "walk", "run", "attack", "death", "reload", "aim"];
+export const CLIP_ORDER: ClipName[] = ["idle", "walk", "run", "attack", "death", "reload", "aim", "rise"];
+
+/**
+ * How much of the rise clip is the man actually getting up.
+ *
+ * Measured on the hips of the marksman's take: it opens on the knee at 48 units
+ * and is standing at full height (92) by the 70% mark, after which it holds
+ * still. Playing or reversing the whole 2.6s would therefore spend a third of
+ * the beat on a figure that has already finished moving — so both directions run
+ * over this span of it and the dead tail is never shown.
+ */
+const RISE_SPAN = 0.72;
 
 /**
  * Fetched together with the rig itself. Everything else is pulled in afterwards
@@ -906,6 +924,78 @@ export class PieceView {
     this.aiming = true;
     this.lockRootMotion = true;
     return true;
+  }
+
+  /**
+   * Retimes the held sight picture. The aim clip carries a lateral scan, which is
+   * right while a shooter is hunting for his mark and wrong once he has fired —
+   * so the beat slows it almost to a stop after the shot and the marksman holds
+   * what he is looking at instead of going back to sweeping the board.
+   *
+   * @param scale 1 = as authored, below that the scan drags.
+   */
+  setAimDrift(scale: number): void {
+    if (!this.aiming) return;
+    this.actions.get("aim")?.setEffectiveTimeScale(Math.max(0.04, scale));
+  }
+
+  /**
+   * Down onto one knee: the rise clip run **backwards**, so the knee that goes
+   * to the stone is the same knee the figure will come up off later.
+   *
+   * @returns how long the drop takes, or 0 when this rig has no such clip.
+   */
+  playKneel(seconds: number): number {
+    return this.playStanceShift(-1, seconds);
+  }
+
+  /**
+   * Back up onto both feet off the knee. The clip is left clamped on its last
+   * standing frame, so the caller can hand over to the stance (or straight into
+   * a march) without the body dropping again in between.
+   *
+   * @returns how long the rise takes, or 0 when this rig has no such clip.
+   */
+  playRise(seconds: number): number {
+    return this.playStanceShift(1, seconds);
+  }
+
+  /**
+   * The one clip that changes a figure's stance, played in whichever direction
+   * the beat needs. Reverse playback is a first-class mixer feature: with
+   * `LoopOnce` and a negative time scale the action clamps at time 0 and fires
+   * `finished` exactly as it does at the far end.
+   *
+   * @param direction 1 rises off the knee, -1 goes down onto it.
+   * @param seconds how long the move should take, whatever the clip's own length.
+   */
+  private playStanceShift(direction: 1 | -1, seconds: number): number {
+    const action = this.actions.get("rise");
+    if (!action || !this.mixer || this.slain) return 0;
+    // Only the part of the clip that is the actual stance change (see RISE_SPAN).
+    const span = action.getClip().duration * RISE_SPAN;
+    const target = Math.max(0.2, seconds);
+    const timeScale = THREE.MathUtils.clamp(span / target, 0.35, 3.4);
+    const duration = span / timeScale;
+
+    for (const [key, other] of this.actions) {
+      if (key !== "rise") other.fadeOut(0.12);
+    }
+    action.reset();
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.paused = false;
+    action.time = direction > 0 ? 0 : span;
+    action.setEffectiveTimeScale(direction * timeScale);
+    action.setEffectiveWeight(1);
+    action.fadeIn(0.12).play();
+
+    this.activeOneShot = "rise";
+    this.idleLooping = false;
+    this.marchLoop = null;
+    this.aiming = false;
+    this.lockRootMotion = true;
+    return duration;
   }
 
   /** Crossfades back to the looping combat stance. */

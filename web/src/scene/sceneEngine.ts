@@ -499,6 +499,21 @@ interface GunProfile {
   hold: number;
   /** Second tremor a beat after the shot; 0 leaves the hall still. */
   aftershock: number;
+  /**
+   * Whether the shot is taken standing or from one knee, and — for a kneeling
+   * gunner — how long the drop onto the stone takes.
+   *
+   * This is not decoration: it decides *which pose the gun is fired from*. A
+   * standing gunner plays his firing drill, because every one of those clips
+   * starts and ends on its feet, so the drill agrees with the stance around it.
+   * A kneeling gunner has no such clip — the generator's kneeling-looking take
+   * measures as a stand-crouch-stand cycle whose ignition frame lands with the
+   * man upright (see the marksman's note in `assets/generated.ts`) — so he holds
+   * his kneeling aim through the trigger, the report and the recoil, reloads
+   * still on the knee, and only rises once the body is cleared. One stance per
+   * shot: nobody bobs up and down mid-kill.
+   */
+  stance: { kneel: false } | { kneel: true; drop: number };
 }
 
 /**
@@ -536,6 +551,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: null,
     hold: 0.06,
     aftershock: 0,
+    // Settled where he stands: the Emperor does not kneel to shoot a man.
+    stance: { kneel: false },
   },
   // Charleville musket: shouldered, a hard crack and a bank of white smoke.
   p: {
@@ -565,6 +582,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: null,
     hold: 0.05,
     aftershock: 0,
+    // The line fires standing, shoulder to shoulder — that is what a line is.
+    stance: { kneel: false },
   },
   // Field gun: the crew stands clear, the piece rolls back and the stone rings.
   r: {
@@ -596,6 +615,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: { radius: 3.6, color: 0xffb271 },
     hold: 0.12,
     aftershock: 0.32,
+    // The crew serves the piece on its feet; only the reload goes to a knee.
+    stance: { kneel: false },
   },
   // Rifled long arm, fired from one knee: the longest held breath on the board
   // and the flattest, fastest ball. Less flame and less smoke than the line's
@@ -609,16 +630,18 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // distance as the line infantry's volley — the man kneeling in frame is the
     // thing to look at, not a lens effect wrapped around him.
     zoom: 5.5,
-    // Long enough for the knee to actually reach the stone before the drill
-    // starts: dropping into the kneel *is* his aim now.
-    aim: 0.62,
+    // The held breath *after* he is down and before the trigger — the drop onto
+    // the knee is now a beat of its own (see `stance.drop`), so this no longer
+    // has to cover it.
+    aim: 0.55,
     voice: "rifle",
     // A marksman's piece, hand-fitted and finely primed — a fast lock, because a
     // slow one throws the shot off at the range he is expected to hit at.
     lock: 0.038,
-    // Still the longest drill on the board — knee down, barrel levelled, head to
-    // the sights, breath held, then the shot — but no longer stretched to fill an
-    // overlay, so it plays closer to the speed a man actually moves at.
+    // Still the longest wait on the board between the barrel coming up and the
+    // hammer falling. No clip is retimed by these numbers any more — the kneeling
+    // shot is fired out of a held aim rather than out of a drill (see `stance`) —
+    // so they are now purely the *beat*: 1.02s of held sights before the shot.
     drill: { seconds: 1.7, impact: 0.6 },
     calibre: 0.5,
     // A small, tightly patched charge burning almost completely: the least flame
@@ -647,6 +670,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: null,
     hold: 0.08,
     aftershock: 0,
+    // The one man on the board who fights off the stone. 0.85s is what going
+    // down on a knee under arms actually takes — the rise clip run backwards
+    // covers it, so the knee plants instead of the body sinking.
+    stance: { kneel: true, drop: 0.85 },
   },
   // The commander's flintlock: the Emperor's own weapon, held a beat longer.
   // She takes the shot standing at full height with the Marengo sword still in
@@ -675,6 +702,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: null,
     hold: 0.07,
     aftershock: 0,
+    // Standing at full height, sword still in her left hand.
+    stance: { kneel: false },
   },
   n: {
     zoom: 6,
@@ -701,6 +730,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     wave: null,
     hold: 0.05,
     aftershock: 0,
+    // A cavalryman does not kneel; he barely stops moving.
+    stance: { kneel: false },
   },
 };
 
@@ -2142,11 +2173,33 @@ export class SceneEngine {
       volume: 0.5 + gun.calibre * 0.5,
     });
 
+    // ---- going down on the knee ----------------------------------------
+    // A kneeling gunner gets there before anything else happens, and he gets
+    // there on an articulated clip (the rise run backwards) rather than by being
+    // blended downwards, so the knee plants on the stone instead of the whole
+    // body sinking through it.
+    const kneeling = gun.stance.kneel;
+    if (kneeling) {
+      const drop = attacker.playKneel(gun.stance.drop);
+      if (drop > 0) {
+        // The knee and the hand taking the weight of the rifle, on the frame the
+        // stone is actually reached.
+        audio.footstep({
+          pan: this.stereoPan(from),
+          timbre: "scuff",
+          volume: 0.42,
+          delay: drop * 0.82,
+          jitter: -0.3,
+        });
+        await wait(drop);
+      }
+    }
+
     // ---- taking aim ----------------------------------------------------
     // The weapon comes up and is held on the body. A rig that carries a sight
     // picture loops it here; one that does not leans into the shot by hand, so
     // every gunner is visibly aiming before anything is fired.
-    const aiming = attacker.playAim(0.18);
+    const aiming = attacker.playAim(kneeling ? 0.3 : 0.18);
     if (!aiming) {
       void this.tweens.to({
         duration: Math.max(0.12, gun.aim),
@@ -2157,21 +2210,35 @@ export class SceneEngine {
     await wait(gun.aim);
 
     // ---- the drill -----------------------------------------------------
-    // The firing clip is played at its own readable length (see GunProfile.drill)
-    // and the shot leaves on the frame the hammer falls, not halfway through the
-    // wind-up. A rig whose clip never arrived levels the barrel by hand instead.
-    const fire = attacker.hasClip("attack")
+    // A standing gunner plays his firing clip at its own readable length (see
+    // GunProfile.drill) and the shot leaves on the frame the hammer falls, not
+    // halfway through the wind-up.
+    //
+    // A kneeling gunner plays no firing clip at all, on purpose: every shooting
+    // take the generator produces starts and ends on its feet, so playing one out
+    // of a kneel had him stand up to fire and drop back down afterwards — the
+    // bobbing this branch exists to stop. He fires out of the held kneel, and the
+    // whole shot (trigger, report, recoil) is timed off the drill numbers rather
+    // than off a clip. A rig whose clip never arrived levels the barrel by hand.
+    const fire = !kneeling && attacker.hasClip("attack")
       ? attacker.playAttack({ seconds: gun.drill.seconds, impactAt: gun.drill.impact })
       : null;
     const byHand = !fire || fire.duration <= 0;
-    const untilShot = byHand ? 0.32 : fire.impact;
+    // Without a clip the beat still keeps the barrel's authored spacing: the
+    // marksman's held sights are a second of stillness, not a third of one.
+    const untilShot = byHand
+      ? Math.max(0.24, gun.drill.seconds * gun.drill.impact * (kneeling ? 1 : 0.32))
+      : fire.impact;
     if (byHand) {
       // The lean is no longer awaited: the two waits below own the clock, so the
       // trigger and the report keep their spacing whether or not a clip arrived.
+      // A kneeling shooter is braced against his own leg, so he settles onto the
+      // sights instead of leaning into them.
+      const settle = kneeling ? -0.05 : -0.14 * (aiming ? 1 : 0.6);
       void this.tweens.to({
         duration: untilShot,
         easing: Ease.outCubic,
-        onUpdate: (t) => attacker.setStrikeTilt(-0.14 * (aiming ? 1 : 0.6) - 0.06 * t),
+        onUpdate: (t) => attacker.setStrikeTilt(settle - (kneeling ? 0.02 : 0.06) * t),
       });
     }
 
@@ -2410,6 +2477,11 @@ export class SceneEngine {
     if (gun.hold > 0) await wait(gun.hold);
     if (gun.aftershock > 0) void this.aftershock(strikeSquare, gun.aftershock);
 
+    // The sight picture stops sweeping the moment the shot is away: a man who
+    // has fired watches what he hit. The kneel is held — nothing about the body
+    // changes between the report and the man across the board going down.
+    if (aiming) attacker.setAimDrift(0.18);
+
     // Shot dead where it stood, before the shooter has moved a boot.
     await this.slay(victim, blow);
 
@@ -2423,13 +2495,45 @@ export class SceneEngine {
     });
 
     // The body is cleared while the gun is served again — nobody advances on a
-    // square with an empty barrel.
+    // square with an empty barrel. A kneeling gunner reloads *on the knee* he
+    // fired from and is not stood up by that beat.
     await Promise.all([this.banish(victim, blow), this.reload(attacker, gun)]);
+
+    // ...then, and only then, he comes up off the stone.
+    if (kneeling) await this.riseToFeet(attacker, from);
 
     // ...and only now is the square walked to.
     this.focusPiece(attacker, 0.94);
     await this.glide(attacker, from, to, false, 1.1);
     audio.play("place", 0.5);
+  }
+
+  /**
+   * Up off the knee, once the shot is over and the body is gone.
+   *
+   * This is deliberately its own beat rather than a side effect of the reload or
+   * of the march: the whole point of the kneeling shot is that the man holds one
+   * stance from the moment he goes down until the moment there is nothing left to
+   * shoot at. Standing up is the *reward* for that, so it is allowed the time it
+   * takes and is heard — the boot taking his weight as the leg straightens.
+   *
+   * A rig whose rise clip has not landed falls back to a long crossfade into the
+   * stance, which is slower than the old 0.22s snap and reads as getting up
+   * rather than as popping upright.
+   */
+  private async riseToFeet(attacker: PieceView, at: THREE.Vector3): Promise<void> {
+    const pan = this.stereoPan(at);
+    const length = attacker.playRise(0.95);
+    if (length <= 0) {
+      attacker.playIdle(0.5);
+      await wait(0.4);
+      return;
+    }
+    audio.footstep({ pan, timbre: "scuff", volume: 0.5, delay: length * 0.55, jitter: -0.2 });
+    await wait(length);
+    // The clip is clamped on its standing frame, so the stance blends out of a
+    // body that is already on its feet.
+    attacker.playIdle(0.2);
   }
 
   /**
@@ -2586,6 +2690,12 @@ export class SceneEngine {
    * Serving the piece again after a shot: the drill clip if the rig carries one,
    * with the ramrod and the lock heard over it. Kept to the length of the body
    * being cleared away, so the beat costs the fight nothing.
+   *
+   * A standing gunner is handed back to his stance at the end of it. A kneeling
+   * one is **not**: his reload is authored on the knee, and standing him up here
+   * would put a stance change in the middle of the beat that is supposed to be
+   * the one thing he does without moving. He is stood up afterwards, once, by
+   * {@link SceneEngine.riseToFeet}.
    */
   private async reload(attacker: PieceView, gun: GunProfile): Promise<void> {
     if (!attacker.hasClip("reload")) return;
@@ -2595,7 +2705,7 @@ export class SceneEngine {
     audio.gunLock({ pan, weight: gun.calibre, volume: 0.42, delay: length * 0.28 });
     audio.gunLock({ pan, weight: gun.calibre * 0.6, volume: 0.32, delay: length * 0.62 });
     await wait(Math.min(length, 0.95));
-    attacker.playIdle(0.22);
+    if (!gun.stance.kneel) attacker.playIdle(0.22);
   }
 
   /** Caster with no clip: the shoulders go back over the gathering fire. */
