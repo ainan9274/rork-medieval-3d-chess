@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import { ARMY_SKINS, SHOT_MODEL_URL, type ArmySkinId, type ArsenalId, type GunVoice } from "../assets/generated";
+import { ARMY_SKINS, SHOT_MODELS, type ArmySkinId, type ArsenalId, type GunVoice } from "../assets/generated";
 import type { GameController } from "../core/gameController";
 import type { Faction, GameSnapshot, MoveEvent, PieceKind, SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
@@ -450,7 +450,16 @@ interface GunProfile {
   ammo: AmmoKind;
   /** Diameter of the bore in world units — the round is scaled off it. */
   ball: number;
-  /** Seconds the ball spends crossing one tile. */
+  /**
+   * Seconds the ball spends crossing one tile.
+   *
+   * Nothing here is muzzle velocity: a real ball crosses eight squares of this
+   * hall in about a hundredth of a second, which is one frame, which is why the
+   * shot could not be seen at all. These are film speeds — slow enough to pick
+   * the round up as it leaves the bore and follow it into the body, fast enough
+   * that it still reads as shot rather than as a thrown stone. The order between
+   * barrels is kept true: rifled fastest, field gun slowest.
+   */
   speed: number;
   /** Puffs in the bank of smoke left hanging in front of the barrel. */
   smoke: number;
@@ -498,7 +507,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     flash: 0.44,
     ammo: "pistolBall",
     ball: 0.055,
-    speed: 0.028,
+    speed: 0.1,
     smoke: 4,
     smokeTint: null,
     smokeDensity: 0.85,
@@ -523,7 +532,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // that bellies furthest off the line of sight.
     ammo: "musketBall",
     ball: 0.078,
-    speed: 0.03,
+    speed: 0.108,
     smoke: 6,
     smokeTint: null,
     smokeDensity: 1,
@@ -546,8 +555,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     flash: 1.35,
     // Solid iron, straight out of the sand mould and still hot from the bore.
     ammo: "roundShot",
+    // The one round on the board heavy enough to watch travel on its own merits.
     ball: 0.17,
-    speed: 0.024,
+    speed: 0.125,
     smoke: 11,
     smokeTint: null,
     smokeDensity: 1.15,
@@ -578,7 +588,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // and dead straight where every ball on the board wanders.
     ammo: "minieBullet",
     ball: 0.05,
-    speed: 0.021,
+    // Flattest and fastest thing fired in the hall, as rifling should be.
+    speed: 0.082,
     smoke: 6,
     smokeTint: 0xdfe4ea,
     smokeDensity: 0.62,
@@ -603,7 +614,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     flash: 0.48,
     ammo: "pistolBall",
     ball: 0.058,
-    speed: 0.026,
+    speed: 0.096,
     smoke: 5,
     smokeTint: null,
     smokeDensity: 0.9,
@@ -625,7 +636,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // A cavalry carbine: the same ball as the line, off a shorter barrel.
     ammo: "musketBall",
     ball: 0.072,
-    speed: 0.03,
+    speed: 0.106,
     smoke: 5,
     smokeTint: null,
     smokeDensity: 1,
@@ -914,11 +925,12 @@ export class SceneEngine {
     if (this.disposed) return;
     this.rebuildPieces();
     this.callbacks.onReady();
-    // The sculpted Minié round, fetched behind the game: a few thousand triangles
-    // that only matter the first time the marksman pulls a trigger. Until it
-    // lands — and for every other barrel, which is served from the forge in
-    // `scene/ammunition.ts` — the round is turned procedurally instead.
-    void primeShotModel({ url: SHOT_MODEL_URL, ammo: "minieBullet" });
+    // The magazine, fetched behind the game: one sculpt per round in the army's
+    // barrels, a couple of thousand triangles each, and none of them needed until
+    // somebody pulls a trigger. Until a sculpt lands the round is turned
+    // procedurally instead (`scene/ammunition.ts`), so the first shot of a game is
+    // never a blank.
+    for (const source of SHOT_MODELS) void primeShotModel(source);
     // The rigs and their stances are in; the strikes, deaths and strides come
     // down behind the game so the first move never waits on seventy GLBs.
     void this.factory.warmClips();
@@ -2128,16 +2140,21 @@ export class SceneEngine {
     // its wheels before the crew heaves it up to the mark again.
     this.kickBack(attacker, blow, gun);
 
-    // Shot travels flat: no arc, no easing, gone almost before it is seen. Which
-    // round crosses the hall — a cast lead ball that wanders, a rifled Minié that
-    // does not, or a glowing lump of iron — is read off the barrel's loadout.
+    // Shot travels flat: no arc, no easing. Which round crosses the hall — a cast
+    // lead ball that wanders, a rifled Minié that does not, or a glowing lump of
+    // iron — is read off the barrel's loadout.
+    //
+    // The round leaves from just clear of the bore rather than from the muzzle
+    // point itself: started dead on the muzzle it spawns inside the flash and the
+    // powder bank, and the first third of its flight is invisible.
+    const clear = muzzle.clone().addScaledVector(aim, Math.min(0.34, gun.flash * 0.42));
     const smoking = settings.captureParticles >= 34;
     let nextWisp = 0.12;
-    await flyShot(this.scene, this.tweens, muzzle, chest, {
+    await flyShot(this.scene, this.tweens, clear, chest, {
       look,
       ammo: gun.ammo,
       size: gun.ball,
-      flight: THREE.MathUtils.clamp((distance / TILE) * gun.speed, 0.05, 0.2),
+      flight: THREE.MathUtils.clamp((distance / TILE) * gun.speed, 0.17, 0.58),
       light: gun.ammo === "roundShot" && settings.postFx ? this.spellLights.acquire(0xff7a2e, 3.2) : null,
       onTrail: (at, t) => {
         if (!smoking || t < nextWisp) return;
@@ -2192,7 +2209,7 @@ export class SceneEngine {
           look,
           ammo: gun.ammo,
           size: gun.ball,
-          flight: 0.12,
+          flight: 0.24,
           light: null,
         });
         audio.ballImpact({ pan: this.stereoPan(beyond), volume: 0.42 });

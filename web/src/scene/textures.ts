@@ -777,6 +777,52 @@ export function muzzleFlashTexture(): THREE.CanvasTexture {
   return texture;
 }
 
+/**
+ * Motion smear along a round's line of travel: opaque at the nose, gone at the
+ * tail, with a bright thread down the middle.
+ *
+ * Mapped onto the tapered cone that trails a shot, so the streak fades along
+ * its length rather than ending in a hard edge. A shot crossing a hall in half
+ * a second is a few pixels wide — this smear is the only thing that gives the
+ * eye something to follow, which is why it carries a hot core rather than a
+ * flat wash.
+ */
+export function tracerTexture(): THREE.CanvasTexture {
+  const width = 32;
+  const height = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2D canvas unavailable");
+  ctx.clearRect(0, 0, width, height);
+
+  // Cylinder UVs run 0 at the tail to 1 at the nose, so the gradient is built
+  // bottom-up: nothing where the smear dies, solid where the metal is.
+  const along = ctx.createLinearGradient(0, height, 0, 0);
+  along.addColorStop(0, "rgba(255,255,255,0)");
+  along.addColorStop(0.34, "rgba(255,255,255,0.1)");
+  along.addColorStop(0.74, "rgba(255,255,255,0.42)");
+  along.addColorStop(1, "rgba(255,255,255,0.92)");
+  ctx.fillStyle = along;
+  ctx.fillRect(0, 0, width, height);
+
+  // A hotter thread down the axis of the smear — the centre of a blurred body
+  // is always brighter than its edges.
+  const core = ctx.createLinearGradient(0, 0, width, 0);
+  core.addColorStop(0, "rgba(255,255,255,0)");
+  core.addColorStop(0.5, "rgba(255,255,255,0.5)");
+  core.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalCompositeOperation = "source-over";
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /** Vertical light-shaft gradient (bright at the window, fading to the floor). */
 export function shaftTexture(): THREE.CanvasTexture {
   const size = 128;

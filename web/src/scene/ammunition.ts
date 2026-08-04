@@ -38,6 +38,16 @@ export interface AmmoSpec {
    */
   length: number;
   /**
+   * How much larger than life the round is drawn, as a multiple of the bore.
+   *
+   * A .69 ball is a fiftieth of a man's height: rendered true to scale on a
+   * board this size it is one or two pixels, and a shot simply *cannot be seen*.
+   * This is the one deliberate lie in the magazine — the round is drawn at a
+   * legible gauge (still far smaller than a fist beside the figures) while its
+   * flight path, wander and spin stay on the real numbers.
+   */
+  gauge: number;
+  /**
    * Rifling. A stabilised round spins about its own nose axis and stays
    * pointing where it was sent; a ball out of a smoothbore tumbles on whatever
    * axis it happened to leave with.
@@ -57,8 +67,17 @@ export interface AmmoSpec {
    * across the hall.
    */
   heat: number;
-  /** The smear the round leaves on the eye: colour, strength, and how far it trails. */
+  /**
+   * The motion smear behind the round: colour, strength, and its length in
+   * rendered ball diameters. This is blur, not fire — no period round was a
+   * tracer, so it is grey for lead and only warm for iron out of a hot bore.
+   */
   streak: { color: number; opacity: number; stretch: number };
+  /**
+   * Torchlight caught on the metal as it turns, as a fraction of full white.
+   * Without it, cold lead crossing a dark hall reads as nothing at all.
+   */
+  glint: number;
   /** Air dragged along behind a heavy round, in bore diameters. 0 for small arms. */
   wake: number;
 }
@@ -72,11 +91,13 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
   pistolBall: {
     label: "cast lead pistol ball",
     length: 1,
+    gauge: 2.5,
     stabilised: false,
-    twist: 14,
+    twist: 5,
     wander: 0.9,
     heat: 0,
-    streak: { color: 0xbfc4cb, opacity: 0.16, stretch: 2.4 },
+    streak: { color: 0xc9ced6, opacity: 0.34, stretch: 7 },
+    glint: 0.4,
     wake: 0,
   },
   // .69 Charleville ball. The heaviest thing the line carries and the least
@@ -84,11 +105,13 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
   musketBall: {
     label: ".69 Charleville musket ball",
     length: 1,
+    gauge: 2.3,
     stabilised: false,
-    twist: 11,
+    twist: 4,
     wander: 1.6,
     heat: 0,
-    streak: { color: 0xb8bcc2, opacity: 0.2, stretch: 2.9 },
+    streak: { color: 0xc2c7ce, opacity: 0.4, stretch: 8.5 },
+    glint: 0.42,
     wake: 0,
   },
   // Rifled: conical, spun hard, and the only round that goes exactly where it
@@ -96,22 +119,29 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
   minieBullet: {
     label: "Minié bullet",
     length: 1.9,
+    gauge: 2.6,
     stabilised: true,
-    twist: 46,
+    // Spun about its own nose, so the grease grooves flicker rather than the
+    // whole round turning over — the mark of a rifled barrel.
+    twist: 22,
     wander: 0,
     heat: 0,
-    streak: { color: 0xd6dae0, opacity: 0.22, stretch: 3.4 },
+    streak: { color: 0xdde1e7, opacity: 0.46, stretch: 11 },
+    glint: 0.5,
     wake: 0,
   },
   // Solid iron, out of a 6-pounder. Slow enough to watch, hot enough to see.
   roundShot: {
     label: "6-pounder round shot",
     length: 1,
+    // Already the biggest thing fired on the board: it needs the least help.
+    gauge: 1.7,
     stabilised: false,
-    twist: 5,
+    twist: 2.4,
     wander: 0.35,
     heat: 1,
-    streak: { color: 0xff9a52, opacity: 0.4, stretch: 2.2 },
+    streak: { color: 0xff9a52, opacity: 0.52, stretch: 6 },
+    glint: 0.3,
     wake: 2.4,
   },
 };
@@ -123,17 +153,22 @@ let ironMaterial: THREE.MeshStandardMaterial | null = null;
 const geometries: THREE.BufferGeometry[] = [];
 
 /**
- * Unpolished cast lead: nearly no colour of its own, dull under a torch, and
- * dark enough that it never reads as a spark.
+ * Unpolished cast lead: nearly no colour of its own and dull under a torch, but
+ * kept off full metalness on purpose. A mirror-metal sphere a few pixels across
+ * has nothing to reflect in a dark hall and renders as a black dot; a rougher,
+ * lighter lead catches the torches and stays visible while it crosses.
  */
 function lead(): THREE.MeshStandardMaterial {
   if (!leadMaterial) {
     leadMaterial = new THREE.MeshStandardMaterial({
-      color: 0x82878f,
-      metalness: 0.92,
-      roughness: 0.58,
+      color: 0xb4bac2,
+      metalness: 0.62,
+      roughness: 0.44,
+      // Never fully black, even with every torch behind it.
+      emissive: new THREE.Color(0x2c3138),
+      emissiveIntensity: 1,
     });
-    leadMaterial.envMapIntensity = 0.9;
+    leadMaterial.envMapIntensity = 1.3;
   }
   return leadMaterial;
 }
@@ -142,13 +177,13 @@ function lead(): THREE.MeshStandardMaterial {
 function iron(): THREE.MeshStandardMaterial {
   if (!ironMaterial) {
     ironMaterial = new THREE.MeshStandardMaterial({
-      color: 0x2b2a28,
-      metalness: 0.78,
-      roughness: 0.74,
+      color: 0x3b3936,
+      metalness: 0.68,
+      roughness: 0.72,
       emissive: new THREE.Color(0xff5a1e),
       emissiveIntensity: 0,
     });
-    ironMaterial.envMapIntensity = 0.7;
+    ironMaterial.envMapIntensity = 1;
   }
   return ironMaterial;
 }

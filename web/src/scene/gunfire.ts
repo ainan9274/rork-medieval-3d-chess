@@ -19,7 +19,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Faction } from "../core/types";
 import { AMMUNITION, type AmmoKind, type AmmoSpec, disposeAmmunition, loadRound } from "./ammunition";
 import type { SpellLight } from "./spells";
-import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture } from "./textures";
+import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture, tracerTexture } from "./textures";
 
 /** How one army's powder burns. Both sides use the same charge; only the
  * livery tint of the smoke differs, so a volley always reads as gunpowder
@@ -47,6 +47,8 @@ let flashMap: THREE.CanvasTexture | null = null;
 let ballMap: THREE.CanvasTexture | null = null;
 let puffMap: THREE.CanvasTexture | null = null;
 let finePuffMap: THREE.CanvasTexture | null = null;
+let smearMap: THREE.CanvasTexture | null = null;
+let smearGeometry: THREE.BufferGeometry | null = null;
 
 function sharedFlashMap(): THREE.CanvasTexture {
   if (!flashMap) flashMap = muzzleFlashTexture();
@@ -67,6 +69,29 @@ function sharedPuffMap(): THREE.CanvasTexture {
 function sharedFinePuffMap(): THREE.CanvasTexture {
   if (!finePuffMap) finePuffMap = fineSmokeTexture();
   return finePuffMap;
+}
+
+function sharedSmearMap(): THREE.CanvasTexture {
+  if (!smearMap) smearMap = tracerTexture();
+  return smearMap;
+}
+
+/**
+ * The body of a round's motion smear: a cone one unit long, wide and bright
+ * where the metal is and tapering to nothing behind it. Authored with the wide
+ * end at the origin and the tip down the negative flight axis, so a shot only
+ * has to point it the way it is travelling and scale it by its own calibre.
+ */
+function sharedSmearGeometry(): THREE.BufferGeometry {
+  if (!smearGeometry) {
+    const cone = new THREE.CylinderGeometry(0.34, 0, 1, 10, 1, true);
+    // Wide end onto the origin, tip hanging below, then the whole thing tipped
+    // from the lathe's +Y onto the flight axis.
+    cone.translate(0, -0.5, 0);
+    cone.rotateX(Math.PI / 2);
+    smearGeometry = cone;
+  }
+  return smearGeometry;
 }
 
 // ---------------------------------------------------------------- the ball
@@ -174,6 +199,7 @@ export function primeShotModel(source: ShotModelSource): Promise<void> {
         // A ball in flight is a handful of pixels crossing the screen in a tenth
         // of a second; culling it by a stale bounding sphere makes it blink.
         mesh.frustumCulled = false;
+        legible(mesh.material);
       });
       sculpts.set(source.ammo, oriented);
     } catch (error) {
@@ -184,16 +210,66 @@ export function primeShotModel(source: ShotModelSource): Promise<void> {
   return job;
 }
 
+/**
+ * Makes a sculpt's own metal readable at speed.
+ *
+ * A generated round comes back as a small, dark, near-mirror body. That is
+ * physically fair and visually useless: with nothing to reflect in a torch-lit
+ * hall it renders as a black dot a few pixels across and the shot looks like it
+ * never happened. So the metal is pulled off full mirror, roughened, given a
+ * floor of self-lit grey, and told to take the environment strongly.
+ */
+function legible(material: THREE.Material | THREE.Material[]): void {
+  const list = Array.isArray(material) ? material : [material];
+  for (const entry of list) {
+    const metal = entry as THREE.MeshStandardMaterial;
+    if (!metal.isMeshStandardMaterial) continue;
+    metal.metalness = Math.min(metal.metalness, 0.6);
+    metal.roughness = THREE.MathUtils.clamp(metal.roughness, 0.35, 0.7);
+    metal.envMapIntensity = 1.3;
+    // A floor under the shading, so the round never goes to pure black against
+    // the far wall of the hall.
+    metal.emissive = new THREE.Color(0x2c3138);
+    metal.emissiveIntensity = 1;
+    metal.needsUpdate = true;
+  }
+}
+
+/**
+ * Gives one shot its own copies of a sculpt's materials and returns them, so a
+ * round that leaves the bore glowing can cool on its way across without dimming
+ * every other shot of the same kind still in the air.
+ */
+function ownMetal(round: THREE.Object3D): THREE.MeshStandardMaterial[] {
+  const owned: THREE.MeshStandardMaterial[] = [];
+  round.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    const metal = mesh.material as THREE.MeshStandardMaterial;
+    if (!metal.isMeshStandardMaterial) return;
+    const copy = metal.clone();
+    copy.emissive = new THREE.Color(0xff5a1e);
+    copy.emissiveIntensity = 0;
+    mesh.material = copy;
+    owned.push(copy);
+  });
+  return owned;
+}
+
 /** Frees the shared maps, moulds and metals (scene teardown). */
 export function disposeGunAssets(): void {
   flashMap?.dispose();
   ballMap?.dispose();
   puffMap?.dispose();
   finePuffMap?.dispose();
+  smearMap?.dispose();
+  smearGeometry?.dispose();
   flashMap = null;
   ballMap = null;
   puffMap = null;
   finePuffMap = null;
+  smearMap = null;
+  smearGeometry = null;
   sculpts.clear();
   sculptJobs.clear();
   disposeAmmunition();
@@ -285,16 +361,27 @@ export async function spawnMuzzleFlash(
  *
  * The round itself is a real mesh — a sculpt when one has been fetched for that
  * kind, otherwise forged from `ammunition.ts` — and everything else on it is
- * there to make the metal legible at speed rather than to make it glow. Cold
- * lead gets a faint grey smear the width of the ball, which is motion blur, not
- * fire; hot iron gets a dull glow that cools across the hall and a bank of air
- * dragged along behind it. It lives in world space and is placed by
- * {@link flyShot} every frame.
+ * there to make the metal legible at speed rather than to make it glow.
+ *
+ * Three things carry the read, in order of importance:
+ *
+ * 1. **The smear.** A cone of blurred metal trailing the round down its own
+ *    flight line, brightest at the nose and gone a ball's-length behind. This
+ *    is what the eye actually tracks; a bare sphere at this size cannot be
+ *    followed at all.
+ * 2. **The glint.** A small billboard of caught torchlight on the metal, so the
+ *    round registers even against the dark far wall of the hall.
+ * 3. **The heat.** Only iron out of a field gun: a dull glow that cools as it
+ *    crosses, plus a bank of air dragged along behind the shot.
+ *
+ * It lives in world space and is placed by {@link flyShot} every frame.
  */
 class Shot {
   readonly group = new THREE.Group();
-  /** Motion smear along the line of travel. */
-  private readonly smear: THREE.Sprite;
+  /** Motion smear cone, pointed down the line of travel. */
+  private readonly smear: THREE.Mesh;
+  /** Torchlight caught on the turning metal. */
+  private readonly glint: THREE.Sprite;
   /** Heat still in the metal, for a round that left the bore glowing. */
   private readonly glow: THREE.Sprite | null;
   /** Air pulled along behind a heavy round. */
@@ -311,24 +398,30 @@ class Shot {
    */
   private readonly axis: THREE.Vector3;
   private readonly spin: number;
+  /** Rendered diameter of the round: the bore, opened up to a legible gauge. */
+  private readonly gauge: number;
 
   constructor(kind: AmmoKind, look: GunLook, size: number, light: SpellLight | null) {
     const spec = AMMUNITION[kind];
     this.spec = spec;
     this.light = light;
     this.group.name = `shot_${kind}`;
+    const gauge = size * spec.gauge;
+    this.gauge = gauge;
     const sculpt = sculpts.get(kind);
     if (sculpt) {
       this.round = sculpt.clone(true);
-      this.heated = [];
+      // A sculpt shares its metal with every other shot of the same kind, so a
+      // round that has to cool needs its own copy before its glow is touched.
+      this.heated = spec.heat > 0 ? ownMetal(this.round) : [];
     } else {
       const forged = loadRound(kind);
       this.round = forged.object;
       this.heated = forged.heated;
     }
-    // The mesh is one unit nose-to-base, so the bore diameter and the round's
+    // The mesh is one unit nose-to-base, so the rendered gauge and the round's
     // own proportions are all the scale it needs.
-    this.round.scale.setScalar(size * spec.length);
+    this.round.scale.setScalar(gauge * spec.length);
     this.group.add(this.round);
 
     this.axis = spec.stabilised
@@ -336,20 +429,38 @@ class Shot {
       : new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     this.spin = (Math.random() > 0.5 ? 1 : -1) * spec.twist * (0.85 + Math.random() * 0.3);
 
-    this.smear = new THREE.Sprite(
+    this.smear = new THREE.Mesh(
+      sharedSmearGeometry(),
+      new THREE.MeshBasicMaterial({
+        map: sharedSmearMap(),
+        color: spec.streak.color,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        opacity: spec.streak.opacity,
+        side: THREE.DoubleSide,
+      }),
+    );
+    // Wide as the round at the nose, a handful of calibres long behind it.
+    this.smear.scale.set(gauge, gauge, gauge * spec.streak.stretch);
+    this.smear.renderOrder = 6;
+    this.smear.frustumCulled = false;
+    this.group.add(this.smear);
+
+    this.glint = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: sharedBallMap(),
         color: spec.streak.color,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-        opacity: spec.streak.opacity,
+        opacity: spec.glint,
       }),
     );
-    this.smear.scale.set(size * spec.streak.stretch, size * 0.85, 1);
-    this.smear.renderOrder = 6;
-    this.smear.frustumCulled = false;
-    this.group.add(this.smear);
+    this.glint.scale.setScalar(gauge * 1.6);
+    this.glint.renderOrder = 7;
+    this.glint.frustumCulled = false;
+    this.group.add(this.glint);
 
     if (spec.heat > 0) {
       this.glow = new THREE.Sprite(
@@ -362,7 +473,7 @@ class Shot {
           opacity: 0.55 * spec.heat,
         }),
       );
-      this.glow.scale.setScalar(size * 1.7);
+      this.glow.scale.setScalar(gauge * 1.7);
       this.glow.renderOrder = 7;
       this.glow.frustumCulled = false;
       this.group.add(this.glow);
@@ -380,7 +491,7 @@ class Shot {
           opacity: 0.18,
         }),
       );
-      this.wake.scale.setScalar(size * spec.wake);
+      this.wake.scale.setScalar(gauge * spec.wake);
       this.wake.renderOrder = 5;
       this.wake.frustumCulled = false;
       this.group.add(this.wake);
@@ -398,7 +509,7 @@ class Shot {
     const heat = this.spec.heat * (0.4 + cooling * 0.6);
     if (this.glow) {
       (this.glow.material as THREE.SpriteMaterial).opacity = 0.55 * heat;
-      this.glow.scale.setScalar(this.smear.scale.y * (1.6 + cooling * 0.5));
+      this.glow.scale.setScalar(this.gauge * (1.6 + cooling * 0.5));
     }
     for (const material of this.heated) material.emissiveIntensity = 1.15 * heat;
     this.light?.set(at, heat * 5);
@@ -407,18 +518,24 @@ class Shot {
   /**
    * Points the round down its line of travel and turns it as it goes: a Minié
    * bullet rolls about its nose and stays pointing where it was sent, a cast
-   * ball tumbles end over end about its own axis.
+   * ball tumbles end over end about its own axis. The smear is laid along the
+   * same line so it always trails the metal rather than the camera.
+   *
+   * @param haste flight speed as a multiple of the reference pace, so a fast
+   *   round smears longer than a lumbering one
    */
-  aimAlong(direction: THREE.Vector3, travelled: number): void {
+  aimAlong(direction: THREE.Vector3, travelled: number, haste: number): void {
     this.round.quaternion.setFromUnitVectors(FORWARD, direction);
     this.round.rotateOnAxis(this.axis, travelled * this.spin);
-    // The smear lies behind the round, and the wake further behind still.
-    this.smear.position.copy(direction).multiplyScalar(-this.smear.scale.x * 0.22);
+    this.smear.quaternion.setFromUnitVectors(FORWARD, direction);
+    this.smear.scale.z = this.gauge * this.spec.streak.stretch * haste;
+    // The wake of dragged air hangs behind the smear.
     this.wake?.position.copy(direction).multiplyScalar(-this.wake.scale.x * 0.42);
   }
 
   dispose(): void {
     this.light?.release();
+    (this.glint.material as THREE.Material).dispose();
     (this.smear.material as THREE.Material).dispose();
     if (this.glow) (this.glow.material as THREE.Material).dispose();
     if (this.wake) (this.wake.material as THREE.Material).dispose();
@@ -435,7 +552,11 @@ export interface ShotOptions {
   ammo: AmmoKind;
   /** Diameter of the bore in world units. */
   size: number;
-  /** Seconds of flight. A ball is fast: keep this short. */
+  /**
+   * Seconds of flight. Long enough that the eye can pick the round up and
+   * follow it — a true muzzle velocity would put it in the body inside two
+   * frames, which is exactly why nobody could see the shot.
+   */
   flight: number;
   /** A slot borrowed from the scene's light pool, or null. */
   light?: SpellLight | null;
@@ -471,8 +592,11 @@ export async function flyShot(
   const drift = new THREE.Vector3(0, 1, 0).cross(heading).normalize();
   drift.addScaledVector(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 0.7).normalize();
   const wander = spec.wander * options.size * (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.8);
+  // Tiles per second against a reference pace, so the smear lengthens on a fast
+  // barrel and shortens on a lumbering one instead of being a fixed streak.
+  const haste = THREE.MathUtils.clamp(distance / Math.max(0.01, options.flight) / 12, 0.55, 1.9);
   shot.place(from, 1);
-  shot.aimAlong(heading, 0);
+  shot.aimAlong(heading, 0, haste);
   scene.add(shot.group);
   const at = new THREE.Vector3();
   try {
@@ -485,7 +609,9 @@ export async function flyShot(
         // just does not get there in a straight line.
         if (wander !== 0) at.addScaledVector(drift, wander * Math.sin(Math.PI * t));
         shot.place(at, 1 - t);
-        shot.aimAlong(heading, t * distance);
+        // The smear is short as the round clears the bore, opens to full length
+        // once it is up to speed: a shot has no blur before it has moved.
+        shot.aimAlong(heading, t * distance, haste * Math.min(1, 0.35 + t * 6));
         options.onTrail?.(at, t);
       },
     });

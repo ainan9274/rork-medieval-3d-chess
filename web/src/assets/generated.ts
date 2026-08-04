@@ -6,6 +6,7 @@
  */
 
 import type { Faction, PieceKind } from "../core/types";
+import type { ShotModelSource } from "../scene/gunfire";
 
 const MODEL_BASE = "https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g540sd";
 
@@ -305,13 +306,29 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
 };
 
 /**
- * The ball the Grande Armée fires: a cast lead Minié bullet, flown as a real
- * mesh rather than a sprite so a shot crossing the hall reads as a projectile
- * turning on its own axis. The generator reports it as *directionless* (a body
- * of revolution has no intrinsic front), so the loader takes its measured long
- * axis as the nose — see `scene/gunfire.ts`.
+ * The magazine, sculpt by sculpt: every round the Grande Armée fires is a real
+ * mesh, not a glowing dot, so a shot crossing the hall reads as a piece of metal
+ * turning in the air.
+ *
+ * One sculpt per round in the barrel — the officer's cast lead pistol ball, the
+ * line's battered .69 Charleville ball, the marksman's rifled Minié bullet and
+ * the battery's pitted iron round shot. Every one of them comes back from the
+ * generator as *directionless* (a body of revolution has no intrinsic front), so
+ * the loader takes each sculpt's own measured long axis as the nose rather than
+ * inventing a yaw correction — see `scene/gunfire.ts`. A sculpt that has not
+ * arrived yet is forged procedurally in `scene/ammunition.ts`, so nobody ever
+ * fires a blank while a download is in flight.
  */
-export const SHOT_MODEL_URL = `${MODEL_BASE}/76d56227-19ad-46cf-b9e8-b84f93bef133.glb`;
+export const SHOT_MODELS: ShotModelSource[] = [
+  // Officer's flintlock: small, barely out of round, mould seam still on it.
+  { ammo: "pistolBall", url: `${MODEL_BASE}/49825d82-a7a6-4658-98e0-0c86275128d5.glb` },
+  // .69 soft lead, dented flat in places by the ramrod and stained with fouling.
+  { ammo: "musketBall", url: `${MODEL_BASE}/737c408d-b677-4be0-a805-02354f7f3532.glb` },
+  // The only conical round in the army: ogive nose, grease grooves, hollow base.
+  { ammo: "minieBullet", url: `${MODEL_BASE}/76d56227-19ad-46cf-b9e8-b84f93bef133.glb` },
+  // Six pounds of sand-cast iron, pockmarked and seamed round its middle.
+  { ammo: "roundShot", url: `${MODEL_BASE}/dca2d8a4-736e-4e04-ace0-691ae325a730.glb` },
+];
 
 /**
  * Orientation verdict reported by the generator for every sculpt:

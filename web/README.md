@@ -266,9 +266,9 @@ swordsman default made the whole kneel-level-fire drill flash past in a third of
 rifle's sight picture only closes over the interface once the barrel is already up, so the aim is
 watched in the hall first and through the sights second.
 
-**Each barrel fires its own round** (`src/scene/ammunition.ts`, chosen by `GUNS[kind].ammo`). Every
-round is a real mesh turned to its period drawing and normalised nose-along-travel, one unit
-nose-to-base, so a shot only scales it by the bore:
+**Each barrel fires its own round** (`SHOT_MODELS` for the sculpts, `src/scene/ammunition.ts` for the
+procedural fallbacks, chosen by `GUNS[kind].ammo`). Every round is a real mesh normalised
+nose-along-travel, one unit nose-to-base, so a shot only scales it by its gauge:
 
 | Round | Barrel | Built from | In flight |
 | --- | --- | --- | --- |
@@ -277,15 +277,24 @@ nose-to-base, so a shot only scales it by the bore:
 | `minieBullet` | marshal-tirailleur | lathed ogive, three grease grooves, hollow base skirt | spins about its nose, dead straight |
 | `roundShot` | battery | pitted sand-cast iron ball with casting seam | glows out of the bore and cools; passes through |
 
-Two materials serve all four: dull cast lead (`metalness 0.92`, `roughness 0.58`) and near-black
-sand-cast iron with an emissive that is animated per shot. **No round is a tracer** — black powder
-never fired one. Lead carries only a faint grey motion smear; the orange glow and the dragged-along
-wake belong to the iron alone, and its emissive cools from the muzzle to the body.
+Two materials serve the fallbacks: cast lead (`0xb4bac2`, `metalness 0.62`, `roughness 0.44`) and
+sand-cast iron (`0x3b3936`) with an emissive animated per shot. Both stay *off* full mirror metal with
+a floor of self-lit grey, and `legible()` applies the same treatment to every sculpt's own materials
+on load — a near-mirror sphere a few pixels wide has nothing to reflect in a dark hall and renders as
+a black dot. **No round is a tracer**: black powder never fired one.
 
-The rifled round is the only one flown as a *generated* sculpt (`SHOT_MODEL_URL`, primed by
-`primeShotModel({ ammo: "minieBullet" })`); the sculpt is reported *directionless*, so its measured
-long axis is taken as the nose. Any kind without a sculpt in hand — or before the GLB lands — is
-forged procedurally instead, so gunfire never waits on a download.
+**Why a shot is visible at all.** True to scale a ball is one pixel for one frame, so three dials are
+deliberately cinematic while the physics stays honest: `AMMUNITION[kind].gauge` (1.7–2.6× the bore)
+for how large the round is *drawn*; `GUNS[kind].speed` (0.082–0.125 s per tile, clamped to
+0.17–0.58 s) for a flight the eye can follow; and a **motion smear** — `tracerTexture()` on a tapered
+cone laid along the travel vector (not billboarded), 6–11 calibres long, lengthening with the round's
+actual pace and opening from a stub over the first frames. A small glint sprite carries torchlight on
+the metal, and the round spawns clear of the bore rather than inside its own muzzle flash. The orange
+glow, the borrowed light and the dragged-along wake still belong to the iron alone.
+
+All four are flown as *generated* sculpts (`SHOT_MODELS`, primed by `primeShotModel()`); each sculpt
+is reported *directionless*, so its measured long axis is taken as the nose. A kind whose GLB has not
+landed yet is forged procedurally instead, so gunfire never waits on a download.
 
 Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with the synthesised
 voice dropped to 42 % underneath it for weight, and the ball's arrival has its own whine-into-thud
