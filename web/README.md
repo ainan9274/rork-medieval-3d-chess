@@ -222,20 +222,20 @@ Linux above all) are handled in three places:
   (`SceneEngine.setSafeMode`: no composer, no probe, no shadow maps, +20% exposure). Both are
   persisted in `localStorage` under `kg.render`, and `?safe=1` forces safe rendering from boot.
 
-A showcase duel adds a **clarity grade** on top of the preset (`Postfx.setClarity`): no depth of
+An AI vs AI duel adds a **clarity grade** on top of the preset (`Postfx.setClarity`): no depth of
 field, grain ×0.3, vignette ×0.5 and bloom ×0.62 at a higher threshold, because a duel that is
 watched rather than played needs the sculpts and the squares to read.
 
 ### The verdict card
 
-`GameOverModal.tsx` closes every battle, a showcase included. The old render condition was
-`… && !snapshot.demo?.autoRematch`, so a looping showcase — the mode most likely to be watched —
+`GameOverModal.tsx` closes every battle, an AI vs AI duel included. The old render condition was
+`… && !snapshot.demo?.autoRematch`, so a looping AI vs AI session — the mode most likely to be watched —
 never named a winner: the board just reset. It now takes an optional `ShowcaseOutcome` and adapts:
 
 - **Framing** — duel number, winning crest, how the game ended, `Squire/Knight/Warlord` for each
   engine, the move count, the PGN, then **Another duel** / **Great hall**.
-- **A thin backdrop** — `bg-black/35` and no blur for a showcase (a played game keeps `bg-black/65`
-  plus blur). In a showcase the final position is the picture, so the card must not bury it.
+- **A thin backdrop** — `bg-black/35` and no blur for AI vs AI (a played game keeps `bg-black/65`
+  plus blur). When the duel is watched the final position is the picture, so the card must not bury it.
 - **It waits for the cinematic** — `SHOWCASE_VERDICT_DELAY_MS` (2.2 s) in `GameShell.tsx` holds the
   card back while `playEndCinematic` dollies onto the fallen king (~2.4 s).
 - **The loop, made visible** — with auto-rematch armed, `NextDuelCountdown` shows a
@@ -245,7 +245,7 @@ never named a winner: the board just reset. It now takes an optional `ShowcaseOu
   overlay. `DEMO_REMATCH_DELAY_MS` went 6.5 s → **9 s** so the result can be read before the reset.
 - **Another duel** calls `controller.restartDemo()` when `mode === "demo"`. Routing it through
   `startMatch` (as `handleRematch` used to for every mode) mapped `demo` → `ai`, silently turning a
-  showcase into a game against the computer and resetting the duel counter.
+  watched duel into a game against the computer and resetting the duel counter.
 
 ## Armies
 

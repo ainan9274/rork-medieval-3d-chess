@@ -98,12 +98,12 @@ cd web && bun install && bun run dev
 - **2D tactical view** — one key lifts the camera straight overhead and flattens every figure
   into a stamped counter, so nothing can hide a square. Selection and moving keep working.
 - **Three engine strengths** running off the main thread, so the render loop never blocks.
-- **Showcase / attract mode** — let two engines duel on their own with pace control, pause,
+- **AI vs AI / attract mode** — let two engines duel on their own with pace control, pause,
   auto-rematch, and a clean capture view with the entire interface hidden. Three camera
   behaviours: hold one angle, follow the figure on the move and close in on the fight, or
   drift slowly around the board. The follow rig **leans** towards the action instead of
-  chasing it into the hall wall, so the picture no longer shudders while it tracks. The showcase also renders crisper than a played game —
-  no depth of field, softer grain, vignette and bloom. Every showcase duel now **ends with a
+  chasing it into the hall wall, so the picture no longer shudders while it tracks. AI vs AI also renders crisper than a played game —
+  no depth of field, softer grain, vignette and bloom. Every AI vs AI duel now **ends with a
   verdict card**: who won and how, the two engine strengths, the record, a countdown on the next
   duel that can be held, and one tap to roll another duel or return to the hall.
 - **An interface that stays off the board** — icon-only controls with a themed tooltip on every
@@ -227,8 +227,8 @@ The board owns the screen; every panel is either short, in a corner, or foldable
 | --- | --- |
 | **Player vs Computer** | Pick your colour, an engine strength and an optional clock |
 | **Two players** | Hotseat on one screen; the camera swings round between turns (switchable) |
-| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera, foldable rail, verdict card at the end |
-| **Attract** | Leave the menu alone for 30 seconds and a showcase duel starts behind it |
+| **AI vs AI** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera, foldable rail, verdict card at the end |
+| **Attract** | Leave the menu alone for 30 seconds and an AI vs AI duel starts behind it |
 
 Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.
 
@@ -1292,7 +1292,7 @@ no other**:
 - **Chronicle corner** (`.mc-hud-corner`) — bottom inset for the home bar, left inset for a side
   cutout. Its base padding still steps 0.5 → 0.75 → 1 rem with the screen, so the inset is added
   to the right number rather than replacing it.
-- **Showcase transport, clean-capture button, frame counter, spoils rail** — each shifted off the
+- **AI vs AI transport, clean-capture button, frame counter, spoils rail** — each shifted off the
   corner it is docked in. The transport's `max-width` subtracts the horizontal insets too, so it
   wraps instead of running under a rounded corner.
 - **Full-screen panels** (menu, settings, result) use `.mc-modal-pad`. The dimmed backdrop is

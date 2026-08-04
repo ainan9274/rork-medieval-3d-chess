@@ -66,7 +66,7 @@ const DEMO_SPEEDS: { label: string; value: number }[] = [
   { label: "4×", value: 4 },
 ];
 
-/** Showcase camera behaviours, in the order they appear on the transport. */
+/** AI vs AI camera behaviours, in the order they appear on the transport. */
 const SHOWCASE_CAMERAS: { key: ShowcaseCamera; label: string; hint: string; icon: typeof Camera }[] = [
   { key: "still", label: "still", hint: "Hold one angle — the camera never moves on its own", icon: Camera },
   { key: "follow", label: "follow", hint: "Track the figure on the move and close in on the fight", icon: Crosshair },
@@ -244,7 +244,7 @@ export function Hud({
             <div>
               <p className="mc-display text-[0.58rem] tracking-[0.3em] text-[#a89268]">
                 {demo
-                  ? `Showcase · duel ${snapshot.demoRound}`
+                  ? `AI vs AI · duel ${snapshot.demoRound}`
                   : snapshot.status === "over"
                     ? "Battle ended"
                     : snapshot.thinking
@@ -480,7 +480,7 @@ export function Hud({
         </Tooltip>
       </div>
 
-      {/* Showcase transport — a slim rail tucked into the bottom-right corner,
+      {/* AI vs AI transport — a slim rail tucked into the bottom-right corner,
           icon-only, and foldable down to a single sigil so the board is never
           covered. */}
       {demo ? (
@@ -498,7 +498,7 @@ export function Hud({
                   className="mc-demo-play"
                   data-paused={snapshot.paused || undefined}
                   onClick={onTogglePause}
-                  aria-label={snapshot.paused ? "Resume the showcase" : "Pause the showcase"}
+                  aria-label={snapshot.paused ? "Resume the AI vs AI duel" : "Pause the AI vs AI duel"}
                 >
                   {snapshot.paused ? <Play size={13} /> : <Pause size={13} />}
                 </button>
@@ -582,7 +582,7 @@ export function Hud({
                   type="button"
                   className="mc-demo-fold"
                   onClick={() => setTransportOpen(false)}
-                  aria-label="Hide the showcase transport"
+                  aria-label="Hide the AI vs AI controls"
                 >
                   <ChevronRight size={13} />
                 </button>
@@ -590,7 +590,7 @@ export function Hud({
             </div>
           ) : (
             <Tooltip
-              label="Showcase controls"
+              label="AI vs AI controls"
               hint={`${DIFFICULTY_SHORT[demo.white] ?? demo.white} vs ${
                 DIFFICULTY_SHORT[demo.black] ?? demo.black
               }${snapshot.paused ? " — paused" : ""}. Speed, camera and loop.`}
@@ -601,7 +601,7 @@ export function Hud({
                 className="mc-demo-tab"
                 data-paused={snapshot.paused || undefined}
                 onClick={() => setTransportOpen(true)}
-                aria-label="Show the showcase transport"
+                aria-label="Show the AI vs AI controls"
               >
                 <Clapperboard size={14} />
               </button>

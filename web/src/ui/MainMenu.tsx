@@ -75,7 +75,7 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
         </h1>
         <div className="mc-rule mx-auto mt-3 w-64" />
         <p className="mt-3 text-sm italic text-[#c5b28d]">
-          {attract ? "A showcase duel is under way — move to take the hall" : "Chess in the great hall of Aldermoor"}
+          {attract ? "An AI vs AI duel is under way — move to take the hall" : "Chess in the great hall of Aldermoor"}
         </p>
       </div>
 
@@ -103,7 +103,7 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
             data-active={tab === "demo"}
             onClick={() => setTab("demo")}
           >
-            <Clapperboard size={14} /> Showcase
+            <Clapperboard size={14} /> AI vs AI
           </button>
         </div>
 
@@ -153,7 +153,8 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
         ) : (
           <div className="mc-fade space-y-5">
             <p className="text-sm italic leading-relaxed text-[#b7a88a]">
-              Two engines duel on their own while the camera drifts around the hall — made for capturing footage. Press{" "}
+              Two AI commanders duel on their own while the camera drifts around the hall — made for watching and for
+              capturing footage. Press{" "}
               <span className="mc-display text-[#e2c98f]">C</span> in the match to hide the whole interface.
             </p>
 
@@ -253,7 +254,7 @@ export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, o
         >
           {tab === "demo" ? (
             <>
-              <Clapperboard size={16} /> Roll the showcase
+              <Clapperboard size={16} /> Start AI vs AI
             </>
           ) : (
             <>

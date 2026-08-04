@@ -6,12 +6,12 @@ import type { Difficulty, EndReason, Faction, GameResult } from "../core/types";
 import { Crest } from "./Heraldry";
 
 /**
- * Extra framing for a computer-vs-computer showcase. The viewer is an audience,
+ * Extra framing for an AI vs AI duel. The viewer is an audience,
  * not a combatant: the dialog names the two engines, counts the loop down where
  * one is queued, and offers to hold the board so the final position can be read.
  */
 export interface ShowcaseOutcome {
-  /** 1-based duel counter within this showcase session. */
+  /** 1-based duel counter within this AI vs AI session. */
   round: number;
   white: Difficulty;
   black: Difficulty;
@@ -101,7 +101,7 @@ export function GameOverModal({
         <div className="px-6 pb-6 pt-7 text-center">
           {showcase ? (
             <p className="mc-display text-[0.55rem] tracking-[0.42em] text-[#8a6b3a]">
-              SHOWCASE · DUEL {showcase.round}
+              AI VS AI · DUEL {showcase.round}
             </p>
           ) : null}
 
