@@ -36,6 +36,16 @@ import {
 import { SPELL_LOOK, SpellLightPool, SpellOrb } from "./spells";
 import { disposeStrikeAssets, spawnGroundWave, spawnPillar, spawnSlash } from "./strikes";
 import { Ease, type Easing, TweenManager, wait } from "./tween";
+import {
+  HALL_INNER_RADIUS,
+  frameShot,
+  lensCeiling,
+  orbitLimits,
+  readViewport,
+  type Framing,
+  type OrbitLimits,
+  type ViewportProfile,
+} from "./viewport";
 
 export type CameraPreset = "white" | "black" | "top" | "cinematic";
 
@@ -101,6 +111,19 @@ const TACTICAL_SHOT: CameraShot = {
 };
 const TACTICAL_FOV = 28;
 const DEFAULT_FOV = 46;
+
+/**
+ * The window the shots above were authored against. Every framing is re-solved
+ * for the surface actually being drawn into (`scene/viewport.ts`) — a phone held
+ * upright needs a different distance, elevation and lens to see the same board.
+ */
+const AUTHORED_VIEW: ViewportProfile = {
+  width: 1440,
+  height: 900,
+  aspect: 1.6,
+  handheld: false,
+  portrait: false,
+};
 
 const PROMOTION_CHOICES: PieceKind[] = ["q", "r", "b", "n"];
 
@@ -878,6 +901,23 @@ export class SceneEngine {
   /** Dressing hidden while the map is up, so it can be put back exactly. */
   private struck: THREE.Object3D[] = [];
 
+  /** The surface being drawn into: its shape decides the whole framing. */
+  private view: ViewportProfile = AUTHORED_VIEW;
+  /** True once the first real framing has been solved for the live viewport. */
+  private viewportFitted = false;
+  /**
+   * The lens the current framing asks for. Battle beats punch in *from* this
+   * rather than from a constant, so a phone's wider framing keeps its punch and
+   * a mid-fight rotation never restores the wrong lens.
+   */
+  private lensFov = DEFAULT_FOV;
+  /** Distance the current framing settled on — drives the orbit and follow rigs. */
+  private fitRadius = 10.5;
+  /** The *authored* shot the camera was last sent to, re-solved on every resize. */
+  private framedShot: CameraShot = CAMERA_SHOTS.white;
+  /** Orbit and tap tolerances for this viewport. */
+  private limits: OrbitLimits = orbitLimits(AUTHORED_VIEW, 10.5);
+
   private fpsSamples: number[] = [];
   private autoAdjusted = false;
   private lastFpsReport = 0;
@@ -921,11 +961,8 @@ export class SceneEngine {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.07;
-    this.controls.rotateSpeed = 0.55;
-    this.controls.minDistance = 4.5;
-    this.controls.maxDistance = 17;
-    this.controls.minPolarAngle = 0.12;
-    this.controls.maxPolarAngle = Math.PI / 2 - 0.08;
+    // Distances, elevation limits and rotate speed all come from the viewport —
+    // see `applyOrbitLimits`, called from the resize handler below.
     this.controls.enablePan = false;
     this.controls.target.copy(CAMERA_SHOTS.white.target);
     this.controls.autoRotateSpeed = 0.45;
@@ -1076,6 +1113,7 @@ export class SceneEngine {
     this.cameraDriven = this.updateFollowCamera(delta);
     this.controls.update();
     this.cameraDriven = false;
+    this.confineCamera();
 
     this.camera.position.add(this.shake.offset);
     this.postfx.render(delta);
@@ -1406,7 +1444,7 @@ export class SceneEngine {
           // A broken effect must never strand a figure in the middle of a fight:
           // finish the kill the plain way so the board stays consistent.
           console.warn("[scene] battle beat failed", error);
-          this.camera.fov = DEFAULT_FOV;
+          this.camera.fov = this.lensFov;
           this.camera.updateProjectionMatrix();
           piece.setStrikeTilt(0);
           if (!victim.isSlain) await this.crumble(victim, from);
@@ -1765,12 +1803,12 @@ export class SceneEngine {
     if (blow.lengthSq() < 1e-6) blow.copy(direction);
     blow.normalize();
 
-    const originalFov = this.camera.fov;
+    const punch = this.lensPunch(profile.zoom);
     void this.tweens.to({
       duration: 0.22,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - profile.zoom * t;
+        this.camera.fov = this.lensFov - punch * t;
         this.camera.updateProjectionMatrix();
       },
     });
@@ -1887,7 +1925,7 @@ export class SceneEngine {
       duration: 0.45,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - profile.zoom * (1 - t);
+        this.camera.fov = this.lensFov - punch * (1 - t);
         this.camera.updateProjectionMatrix();
       },
     });
@@ -1980,12 +2018,12 @@ export class SceneEngine {
     const spell = spellProfile(attacker.kind);
     // A duel at range: hold both ends of the bolt in frame.
     this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
-    const originalFov = this.camera.fov;
+    const punch = this.lensPunch(spell.zoom);
     void this.tweens.to({
       duration: 0.28,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - spell.zoom * t;
+        this.camera.fov = this.lensFov - punch * t;
         this.camera.updateProjectionMatrix();
       },
     });
@@ -2033,7 +2071,7 @@ export class SceneEngine {
       duration: 0.45,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - spell.zoom * (1 - t);
+        this.camera.fov = this.lensFov - punch * (1 - t);
         this.camera.updateProjectionMatrix();
       },
     });
@@ -2075,13 +2113,13 @@ export class SceneEngine {
 
     // A duel at range: hold both ends of the shot in frame.
     this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
-    const originalFov = this.camera.fov;
+    const punch = this.lensPunch(gun.zoom);
 
     void this.tweens.to({
       duration: 0.26,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - gun.zoom * t;
+        this.camera.fov = this.lensFov - punch * t;
         this.camera.updateProjectionMatrix();
       },
     });
@@ -2375,7 +2413,7 @@ export class SceneEngine {
       duration: 0.45,
       easing: Ease.outCubic,
       onUpdate: (t) => {
-        this.camera.fov = originalFov - gun.zoom * (1 - t);
+        this.camera.fov = this.lensFov - punch * (1 - t);
         this.camera.updateProjectionMatrix();
       },
     });
@@ -3271,6 +3309,15 @@ export class SceneEngine {
 
   // ------------------------------------------------------------------- camera
 
+  /**
+   * A battle beat's lens punch, scaled to the framing in force. A phone frames
+   * the board through a much wider lens, so a fixed 6° push-in would barely
+   * register there; the punch is a proportion of the shot, not a constant.
+   */
+  private lensPunch(degrees: number): number {
+    return degrees * (this.lensFov / DEFAULT_FOV);
+  }
+
   async moveCameraTo(shot: CameraShot, duration = 1.1): Promise<void> {
     const fromPosition = this.camera.position.clone();
     const fromTarget = this.controls.target.clone();
@@ -3314,7 +3361,11 @@ export class SceneEngine {
     );
 
     this.followOffset.set(
-      THREE.MathUtils.clamp(this.followRig.radius * this.followTightness, 4.8, 16),
+      THREE.MathUtils.clamp(
+        this.followRig.radius * this.followTightness,
+        this.limits.minDistance,
+        this.limits.maxDistance,
+      ),
       this.followRig.phi,
       this.followRig.theta,
     );
@@ -3338,8 +3389,8 @@ export class SceneEngine {
     this.followRig.theta = spherical.theta;
     this.followRig.radius = THREE.MathUtils.clamp(
       spherical.radius / Math.max(0.4, this.followTightness),
-      5.4,
-      13,
+      this.limits.minDistance + 0.9,
+      Math.max(13, this.fitRadius * 1.05),
     );
   }
 
@@ -3363,7 +3414,10 @@ export class SceneEngine {
       this.setTacticalView(false, CAMERA_SHOTS[preset]);
       return;
     }
-    void this.moveCameraTo(CAMERA_SHOTS[preset]);
+    this.framedShot = CAMERA_SHOTS[preset];
+    const framing = this.framingFor(this.framedShot);
+    this.adoptFraming(framing);
+    void this.moveCameraTo(framing);
   }
 
   // --------------------------------------------------------- tactical 2D view
@@ -3396,9 +3450,8 @@ export class SceneEngine {
 
       this.controls.enableRotate = false;
       this.controls.autoRotate = false;
-      this.controls.minDistance = 11;
-      this.controls.maxDistance = 34;
-      void this.flyTo(TACTICAL_SHOT, TACTICAL_FOV);
+      this.framedShot = TACTICAL_SHOT;
+      void this.flyTo(this.framingFor(TACTICAL_SHOT));
       return;
     }
 
@@ -3411,26 +3464,29 @@ export class SceneEngine {
     for (const piece of this.allPieces()) piece.setFlat(false);
 
     this.controls.enableRotate = true;
-    this.controls.minDistance = 4.5;
-    this.controls.maxDistance = 17;
     const shot = exitShot ?? this.tacticalReturn ?? CAMERA_SHOTS.white;
     this.tacticalReturn = null;
-    void this.flyTo(shot, DEFAULT_FOV);
+    this.framedShot = shot;
+    void this.flyTo(this.framingFor(shot));
   }
 
   /** Camera move that also eases the lens between the 3D and map framings. */
-  private async flyTo(shot: CameraShot, fov: number): Promise<void> {
+  private async flyTo(framing: Framing): Promise<void> {
     const fromPosition = this.camera.position.clone();
     const fromTarget = this.controls.target.clone();
     const fromFov = this.camera.fov;
+    const fov = framing.fov;
+    this.lensFov = fov;
+    this.fitRadius = framing.radius;
+    this.applyOrbitLimits();
     this.controls.enabled = false;
     this.cameraScripted = true;
     await this.tweens.to({
       duration: 0.95,
       easing: Ease.inOutCubic,
       onUpdate: (t) => {
-        this.camera.position.lerpVectors(fromPosition, shot.position, t);
-        this.controls.target.lerpVectors(fromTarget, shot.target, t);
+        this.camera.position.lerpVectors(fromPosition, framing.position, t);
+        this.controls.target.lerpVectors(fromTarget, framing.target, t);
         this.camera.fov = fromFov + (fov - fromFov) * t;
         this.camera.updateProjectionMatrix();
       },
@@ -3544,11 +3600,17 @@ export class SceneEngine {
     this.controls.enabled = false;
     this.postfx.setCinematic(true, 7);
 
+    // The fly-in is a performance and keeps its authored path, but the shot it
+    // lands on is the one the player will play from — so that one is solved for
+    // the screen like every other framing.
+    this.framedShot = CAMERA_SHOTS.white;
+    const rest = this.framingFor(CAMERA_SHOTS.white);
+    this.adoptFraming(rest);
     const path: CameraShot[] = [
       { position: new THREE.Vector3(13.5, 2.1, 12.5), target: new THREE.Vector3(5, 3.2, 3.5) },
       { position: new THREE.Vector3(8.5, 2.4, 10.5), target: new THREE.Vector3(0, 1.4, 0) },
       { position: new THREE.Vector3(2.6, 4.2, 9.6), target: new THREE.Vector3(0, 0.6, 0) },
-      CAMERA_SHOTS.white,
+      rest,
     ];
     this.camera.position.copy(path[0].position);
     this.controls.target.copy(path[0].target);
@@ -3559,8 +3621,8 @@ export class SceneEngine {
       this.controls.enabled = false;
     }
 
-    this.camera.position.copy(CAMERA_SHOTS.white.position);
-    this.controls.target.copy(CAMERA_SHOTS.white.target);
+    this.camera.position.copy(rest.position);
+    this.controls.target.copy(rest.target);
     this.postfx.setCinematic(false);
     this.introPlaying = false;
     this.interactive = true;
@@ -3805,8 +3867,9 @@ export class SceneEngine {
     if (!down) return;
 
     // A press that travelled was the camera being swung around, not a tap on a
-    // square, so it must never move a figure or change the selection.
-    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 8) return;
+    // square, so it must never move a figure or change the selection. A finger
+    // is allowed more slop than a mouse — a tap on glass always drifts a little.
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > this.limits.tapSlop) return;
 
     this.updatePointer(event);
     const { square, piece } = this.pickTarget();
@@ -4165,7 +4228,10 @@ export class SceneEngine {
     if (camera !== "orbit") this.controls.autoRotate = false;
     if (changed && !this.tactical) {
       this.followedFocus.copy(BOARD_FOCUS);
-      void this.moveCameraTo(SHOWCASE_SHOT, 1.4);
+      this.framedShot = SHOWCASE_SHOT;
+      const framing = this.framingFor(SHOWCASE_SHOT);
+      this.adoptFraming(framing);
+      void this.moveCameraTo(framing, 1.4);
     }
   }
 
@@ -4192,7 +4258,10 @@ export class SceneEngine {
     this.postfx.setClarity(active || this.showcase);
     if (active) {
       this.controls.enabled = false;
-      void this.moveCameraTo(CAMERA_SHOTS.cinematic, 2);
+      this.framedShot = CAMERA_SHOTS.cinematic;
+      const framing = this.framingFor(CAMERA_SHOTS.cinematic);
+      this.adoptFraming(framing);
+      void this.moveCameraTo(framing, 2);
     } else {
       this.controls.enabled = this.interactive;
     }
@@ -4216,7 +4285,119 @@ export class SceneEngine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
     this.postfx.setSize(width, height);
+    this.applyViewport(width, height);
   };
+
+  // ------------------------------------------------------------- screen fitting
+
+  /**
+   * Re-solve the framing for the surface actually on screen: the lens, the orbit
+   * limits, and — when the *shape* of the screen changed rather than just its
+   * size — the shot itself.
+   *
+   * A browser toolbar sliding away only changes the height by a few percent, and
+   * re-flying the camera for that would fight the player's own zoom, so the shot
+   * is only re-solved when the aspect really moved (a rotation, a phone/desktop
+   * switch, a window drag).
+   */
+  private applyViewport(width: number, height: number): void {
+    const previous = this.view;
+    this.view = readViewport(width, height);
+    const reshaped =
+      !this.viewportFitted ||
+      previous.portrait !== this.view.portrait ||
+      previous.handheld !== this.view.handheld ||
+      Math.abs(previous.aspect - this.view.aspect) > 0.06;
+
+    const framing = this.framingFor(this.framedShot);
+    this.adoptFraming(framing);
+    if (!reshaped) return;
+
+    const first = !this.viewportFitted;
+    this.viewportFitted = true;
+    this.reframeCamera(framing, first ? 0 : 0.7);
+  }
+
+  /** Solves an authored shot for the live viewport. */
+  private framingFor(shot: CameraShot): Framing {
+    const base = this.tactical ? TACTICAL_FOV : DEFAULT_FOV;
+    return frameShot(shot.position, shot.target, this.view, {
+      fov: base,
+      maxFov: lensCeiling(this.view, base),
+      // The map is read from straight above, so it may climb much further out.
+      maxDistance: this.tactical ? 30 : 19,
+    });
+  }
+
+  /** Takes on a framing's lens and reach without moving the camera. */
+  private adoptFraming(framing: Framing): void {
+    this.lensFov = framing.fov;
+    this.fitRadius = framing.radius;
+    this.camera.fov = framing.fov;
+    this.camera.updateProjectionMatrix();
+    this.applyOrbitLimits();
+  }
+
+  private applyOrbitLimits(): void {
+    this.limits = orbitLimits(this.view, this.fitRadius);
+    this.controls.rotateSpeed = this.limits.rotateSpeed;
+    this.controls.minPolarAngle = this.limits.minPolarAngle;
+    this.controls.maxPolarAngle = this.limits.maxPolarAngle;
+    if (this.tactical) {
+      this.controls.minDistance = Math.min(11, this.fitRadius * 0.62);
+      this.controls.maxDistance = Math.max(34, this.fitRadius * 1.5);
+      return;
+    }
+    this.controls.minDistance = this.limits.minDistance;
+    this.controls.maxDistance = this.limits.maxDistance;
+  }
+
+  /**
+   * Puts the camera on a solved framing while keeping the side of the board the
+   * player was watching from — a rotation re-frames the board, it never spins it.
+   */
+  private reframeCamera(framing: Framing, duration: number): void {
+    if (this.introPlaying || this.cameraScripted) return;
+    const current = new THREE.Spherical().setFromVector3(
+      this.scratchDesired.copy(this.camera.position).sub(this.controls.target),
+    );
+    const wanted = new THREE.Spherical().setFromVector3(framing.position.clone().sub(framing.target));
+    if (current.radius > 1e-3) wanted.theta = current.theta;
+    wanted.makeSafe();
+    const position = new THREE.Vector3().setFromSpherical(wanted).add(framing.target);
+    if (duration <= 0) {
+      this.camera.position.copy(position);
+      this.controls.target.copy(framing.target);
+      this.captureFollowRig();
+      return;
+    }
+    void this.moveCameraTo({ position, target: framing.target.clone() }, duration);
+  }
+
+  /**
+   * The camera is never allowed out of the hall.
+   *
+   * Orbit controls can only cap angle and distance independently, so a framing
+   * that needs to sit further back — which is exactly what a narrow screen needs
+   * — walks the camera straight out through the colonnade at radius 12.5, and
+   * the pillars and curtain wall end up standing in front of the board. Any
+   * ground reach past the pillars is converted into height here instead, every
+   * frame, so the view climbs over the hall rather than backing into it.
+   */
+  private confineCamera(): void {
+    // The intro deliberately flies in from outside the walls.
+    if (this.introPlaying || this.cameraScripted) return;
+    const ground = Math.hypot(this.camera.position.x, this.camera.position.z);
+    if (ground <= HALL_INNER_RADIUS) return;
+    const target = this.controls.target;
+    const distance = this.camera.position.distanceTo(target);
+    const scale = HALL_INNER_RADIUS / ground;
+    this.camera.position.x *= scale;
+    this.camera.position.z *= scale;
+    const flat = Math.hypot(this.camera.position.x - target.x, this.camera.position.z - target.z);
+    // Climb by whatever the pull-back was worth, so the framing keeps its size.
+    this.camera.position.y = target.y + Math.sqrt(Math.max(0.25, distance * distance - flat * flat));
+  }
 
   private onManualCamera = (): void => {
     this.lastManualCameraAt = this.elapsed;

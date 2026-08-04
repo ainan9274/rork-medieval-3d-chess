@@ -553,6 +553,48 @@
   }
 }
 
+/* --------------------------------------------- phone: hand-sized interface */
+
+/* The engine frames the board as a centred band on a narrow screen (see
+   `scene/viewport.ts`), so the interface tightens into the two ends of the
+   screen rather than crowding the middle. */
+@media (max-width: 600px) {
+  .mc-icon-btn {
+    /* Still a 44px touch target with the row's gap included. */
+    width: 2.15rem;
+    height: 2.15rem;
+  }
+
+  .mc-hud-top {
+    gap: 0.4rem;
+    padding: 0.5rem;
+  }
+
+  .mc-hud-status {
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  .mc-hud-status .mc-display.text-sm {
+    font-size: 0.78rem;
+  }
+
+  /* Controls that are either duplicated in the camera menu or ignored by the
+     platform give up their place in the row. */
+  .mc-icon-btn[data-wide-only="true"] {
+    display: none;
+  }
+
+  .mc-chronicle-fab {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .mc-cam-menu {
+    width: 11rem;
+  }
+}
+
 /* ------------------------------------------------------- move ledger */
 
 .mc-ledger-tool {

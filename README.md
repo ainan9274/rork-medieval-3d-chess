@@ -115,6 +115,7 @@ Cloudflare Pages or any static host. No environment variables are required to ru
 | Action | Input |
 | --- | --- |
 | Orbit / zoom | Drag, mouse wheel (one-finger drag and pinch on touch) |
+| Playing on a phone | Nothing to set: the framing, the lens and the orbit limits are solved for the screen (see [Fitting the hall to the screen](#fitting-the-hall-to-the-screen)) |
 | Select a figure | Click it — legal squares glow green, captures red |
 | Move | Click a highlighted square (click the figure again to deselect) |
 | Promotion | Pick one of the four figures rotating on pedestals |
@@ -123,8 +124,9 @@ Cloudflare Pages or any static host. No environment variables are required to ru
 | Skip the intro | Click anywhere during the opening sweep |
 | Settings | Gear icon — armies, battleground, graphics preset, capture cinematics, board swing, sound |
 
-There is no drag-and-drop: a press that travels more than 8px is read as a camera swing, so
-orbiting from a figure never moves it. Selection and moves both resolve on release.
+There is no drag-and-drop: a press that travels more than 8px (16px for a finger — a tap on
+glass always drifts) is read as a camera swing, so orbiting from a figure never moves it.
+Selection and moves both resolve on release.
 
 Keyboard shortcuts (ignored while typing in a field):
 
@@ -253,6 +255,7 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── postfx.ts           EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
         │   ├── textures.ts         procedural marble, basalt, bronze, cloth
         │   ├── quality.ts          graphics presets + auto-detection
+        │   ├── viewport.ts         solves the camera framing for the screen it is drawn into
         │   └── tween.ts            promise-based tween engine
         ├── ui/             React + CSS overlay
         │   ├── GameShell.tsx       phases, settings, attract mode, keyboard shortcuts
@@ -945,11 +948,61 @@ Run from `web/`:
 | `bun run test:watch` | Vitest in watch mode |
 | `bun run test:browser` | Browser-mode Vitest only |
 
+## Fitting the hall to the screen
+
+`scene/viewport.ts` — every camera shot in the engine was authored against a wide desktop
+window, and a perspective camera's `fov` is its **vertical** angle. So the narrower the screen,
+the less of the board's *width* fits in frame: on a phone held upright (aspect ≈ 0.46) a 46°
+lens sees barely half the files. And the fix is never "pull straight back", because **the
+colonnade stands at radius 12.5** — a shot dragged out past it puts the hall's own pillars and
+curtain wall between the player and the board.
+
+So the framing is **solved**, not authored. Given the board's reach (the eight files plus a
+margin for the figures and their crests) the engine works out the distance and the lens that
+put the whole board on the *narrow* axis, then takes the extra distance as **height** rather
+than ground reach — the camera climbs over the colonnade instead of backing into it.
+
+| Screen | Lens | Distance | Ground reach | Height |
+| --- | --- | --- | --- | --- |
+| Desktop 16:9 | 46.6° (authored) | 10.5 | 8.6 | 6.4 |
+| Phone, landscape | 46.6° | 10.5 | 8.6 | 6.4 |
+| Tablet, portrait | 63.6° | 10.5 | 7.7 | 7.5 |
+| Phone, portrait | 68° | 14.5 | **10.6** (inside the pillars) | 10.3 |
+
+A desktop window never reaches for any of this and keeps its authored shot exactly.
+
+What else the solved framing carries:
+
+- **The board can never be hidden by the hall.** `confineCamera()` runs every frame: any ground
+  reach past radius 11 is converted into height, keeping the same distance to whatever is being
+  framed. Orbit controls can only cap angle and distance *independently*, so a long pull-back at
+  a low angle used to walk the camera straight through the pillars — that is the bug this closes.
+  The intro fly-in is exempt: it deliberately comes in from outside the walls.
+- **A phone is never given the near-ground angle.** At eye level the board is a line and the
+  screen is all hall, so a handheld view is capped at ~20° above the horizon and framed from
+  higher up — which also means a tap lands on the square the finger is actually over. A pinch
+  cannot come closer than 5.8 units either, so the camera can't be buried inside the front rank.
+- **The 2D tactical map is solved the same way.** Its 28° overhead lens showed six files on a
+  phone; it now opens to whatever the aspect needs (~50° in portrait) and keeps its distance.
+- **Battle lens punches are proportions, not constants.** A 5.5–8.5° push-in barely registers
+  against a 68° framing, so every punch is scaled by the framing in force. Rotating the phone
+  mid-fight can no longer restore the wrong lens either — the beats read the live framing rather
+  than a value captured when the strike began.
+- **Rotating the device re-frames the board** (holding the side you were watching from), while a
+  browser toolbar sliding away does not: the shot is only re-solved when the aspect really moved.
+- **Handheld is a capability test**, not a user-agent guess: a coarse pointer on a hand-sized
+  screen. A phone in desktop mode and a narrow desktop window both get the same treatment.
+- **The interface tightens at the two ends** on a phone: 34px icon buttons, a compact turn slate,
+  and the two controls that are either duplicated in the camera menu (flip) or ignored by the
+  platform (fullscreen on iOS) give up their place in the row.
+
 ## Browser support
 
 Any browser with **WebGL 2** and **Web Audio**: current Chrome, Edge, Firefox and Safari 16+,
-on desktop and tablet. Touch orbit, pinch zoom and tap-to-move are supported; on narrow
-screens the move ledger folds into a corner button so the board keeps the whole viewport.
+on phone, tablet and desktop. Touch orbit, pinch zoom and tap-to-move are supported, the
+framing is solved for the screen it is drawn into (see
+[Fitting the hall to the screen](#fitting-the-hall-to-the-screen)), and on narrow screens the
+move ledger folds into a corner button so the board keeps the whole viewport.
 
 On Linux, check `chrome://gpu` / `about:support` first: without hardware acceleration the browser
 falls back to llvmpipe, and the scene is then rendered by the CPU. The game still runs — see

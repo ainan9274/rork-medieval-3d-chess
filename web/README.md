@@ -21,6 +21,7 @@ bun run preview
 | Action | Input |
 | --- | --- |
 | Orbit / zoom | Drag, mouse wheel (pinch on touch) |
+| Playing on a phone | Nothing to set — the framing is solved for the screen, see [Screen framing](#screen-framing) |
 | Select a figure | Click it (legal squares glow green, captures red) |
 | Move | Click a highlighted square (click the figure again to deselect) |
 | Promotion | Pick one of the four rotating figures on pedestals |
@@ -30,7 +31,7 @@ bun run preview
 | Settings | Gear icon (armies, battleground, graphics preset, capture cinematics, board swing, sound) |
 
 There is no drag-and-drop; both selecting and moving resolve on pointer release, and a press
-that travels more than 8px counts as a camera swing instead.
+that travels more than 8px (16px for a finger) counts as a camera swing instead.
 
 | Key | Action |
 | --- | --- |
@@ -41,11 +42,38 @@ that travels more than 8px counts as a camera swing instead.
 | `Space` | Pause / resume a showcase duel |
 | `Esc` | Close the settings panel, camera menu, chronicle or tooltip |
 
+## Screen framing
+
+`scene/viewport.ts`. A perspective camera's `fov` is its **vertical** angle, and every shot in
+the engine was authored on a wide desktop window — so the narrower the screen, the less of the
+board's *width* fits in frame. Pulling straight back is not the answer either: the colonnade
+stands at radius 12.5, so a shot dragged out past it puts the hall in front of the board.
+
+`frameShot()` therefore solves each authored shot for the live viewport: it works out the
+distance and lens that fit the board's reach on the narrow axis, then takes the extra distance
+as **height** (`groundedPhi`) so the camera climbs over the colonnade. A phone in portrait ends
+up at 68° / radius 14.5 / ground reach 10.6; a desktop window keeps its authored 46° shot
+untouched.
+
+- `confineCamera()` runs every frame and converts any ground reach past radius 11 into height,
+  because orbit controls can only cap angle and distance independently. The intro fly-in is
+  exempt — it comes in from outside the walls on purpose.
+- `orbitLimits()` gives handheld screens a steeper elevation cap, a longer minimum pinch
+  distance, a slower rotate speed and a fatter tap tolerance.
+- `lensFov` holds the framing currently in force; battle-beat punch-ins are scaled against it
+  (`lensPunch`) and read it live, so a rotation mid-fight can never restore the wrong lens.
+- The tactical map is solved through the same path, so its overhead lens opens up in portrait
+  instead of cropping the outer files.
+- `readViewport()` decides "handheld" from a coarse pointer on a hand-sized screen — a capability
+  test, not a user-agent string.
+
 ## Overlay
 
 `GameShell.tsx` owns the phases (loading → menu → playing), the settings, attract mode and the
 keyboard shortcuts; `Hud.tsx` is everything on screen during a game. The board keeps the
 viewport: the turn slate and the icon rail sit in the top corners, the spoils panel is desktop-only,
+phones get 34px buttons and drop the two redundant icons (flip lives in the camera menu,
+fullscreen is ignored by iOS),
 the move record lives behind a corner sigil (`H`), and the showcase transport is a slim
 bottom-right rail that folds down to a single icon.
 
@@ -94,6 +122,7 @@ src/
     postfx.ts          EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
     textures.ts        procedural marble, basalt, bronze, cloth
     quality.ts         graphics presets + auto-detection
+    viewport.ts        solves the framing (distance, elevation, lens) for the live screen
     tween.ts           promise-based tween engine
   ui/                plain React + CSS overlay
     GameShell.tsx      phases, settings, attract mode, shortcuts

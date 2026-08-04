@@ -222,8 +222,8 @@ export function Hud({
   return (
     <>
       {/* Top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:p-4">
-        <div className="mc-slate mc-goldleaf pointer-events-auto flex items-center gap-3 px-3 py-2.5">
+      <div className="mc-hud-top pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:p-4">
+        <div className="mc-hud-status mc-slate mc-goldleaf pointer-events-auto flex items-center gap-3 px-3 py-2.5">
           <Crest faction={snapshot.turn} size={26} active />
           <div>
             <p className="mc-display text-[0.58rem] tracking-[0.3em] text-[#a89268]">
@@ -322,7 +322,7 @@ export function Hud({
           >
             {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </IconButton>
-          <IconButton label="Fullscreen" hint="Fill the whole screen with the hall." onClick={onFullscreen}>
+          <IconButton label="Fullscreen" hint="Fill the whole screen with the hall." onClick={onFullscreen} wideOnly>
             <Maximize size={16} />
           </IconButton>
           <IconButton
@@ -331,6 +331,7 @@ export function Hud({
             keys="F"
             onClick={onFlipCamera}
             active={cameraFlipped}
+            wideOnly
           >
             <Repeat size={16} />
           </IconButton>
@@ -670,6 +671,7 @@ function IconButton({
   disabled,
   danger,
   active,
+  wideOnly,
 }: {
   children: React.ReactNode;
   /** Short name shown on the tooltip's first line and read by screen readers. */
@@ -683,6 +685,12 @@ function IconButton({
   disabled?: boolean;
   danger?: boolean;
   active?: boolean;
+  /**
+   * Dropped on a phone, where the row has to stay one line: either the control
+   * is duplicated in the camera menu (flip) or the platform ignores it anyway
+   * (fullscreen on iOS).
+   */
+  wideOnly?: boolean;
 }) {
   return (
     <Tooltip label={label} hint={hint} keys={keys} side={side}>
@@ -692,6 +700,7 @@ function IconButton({
         onClick={onClick}
         disabled={disabled}
         data-active={active ? "true" : undefined}
+        data-wide-only={wideOnly ? "true" : undefined}
         className={`mc-btn mc-icon-btn ${danger ? "mc-btn-danger" : ""}`}
       >
         {children}
