@@ -16,6 +16,7 @@ import { EffectsSystem, ShakeSystem } from "./effects";
 import { FACTION_ACCENT, PieceFactory, PieceView, type ClipName, type TemplateKey } from "./pieces";
 import { PostFX } from "./postfx";
 import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
+import type { AmmoKind } from "./ammunition";
 import {
   GUN_LOOK,
   disposeGunAssets,
@@ -434,7 +435,13 @@ interface GunProfile {
   calibre: number;
   /** Width of the muzzle flash in world units. */
   flash: number;
-  /** Diameter of the ball in flight. */
+  /**
+   * Which round is rammed down this barrel (see `scene/ammunition.ts`). It
+   * decides the shape of the thing that crosses the board, whether it flies a
+   * true line or wanders, and whether it arrives cold or still glowing.
+   */
+  ammo: AmmoKind;
+  /** Diameter of the bore in world units — the round is scaled off it. */
   ball: number;
   /** Seconds the ball spends crossing one tile. */
   speed: number;
@@ -482,7 +489,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 1.15, impact: 0.5 },
     calibre: 0.06,
     flash: 0.44,
-    ball: 0.06,
+    ammo: "pistolBall",
+    ball: 0.055,
     speed: 0.028,
     smoke: 4,
     smokeTint: null,
@@ -504,7 +512,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 1.3, impact: 0.56 },
     calibre: 0.44,
     flash: 0.6,
-    ball: 0.075,
+    // .69 of soft lead — the fattest small-arms round on the board, and the one
+    // that bellies furthest off the line of sight.
+    ammo: "musketBall",
+    ball: 0.078,
     speed: 0.03,
     smoke: 6,
     smokeTint: null,
@@ -526,7 +537,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 1.25, impact: 0.52 },
     calibre: 1,
     flash: 1.35,
-    ball: 0.15,
+    // Solid iron, straight out of the sand mould and still hot from the bore.
+    ammo: "roundShot",
+    ball: 0.17,
     speed: 0.024,
     smoke: 11,
     smokeTint: null,
@@ -554,7 +567,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 2.1, impact: 0.64 },
     calibre: 0.5,
     flash: 0.5,
-    ball: 0.068,
+    // The only round in the army with rifling behind it: conical, spun hard,
+    // and dead straight where every ball on the board wanders.
+    ammo: "minieBullet",
+    ball: 0.05,
     speed: 0.021,
     smoke: 6,
     smokeTint: 0xdfe4ea,
@@ -578,7 +594,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 1.35, impact: 0.54 },
     calibre: 0.12,
     flash: 0.48,
-    ball: 0.062,
+    ammo: "pistolBall",
+    ball: 0.058,
     speed: 0.026,
     smoke: 5,
     smokeTint: null,
@@ -598,7 +615,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     drill: { seconds: 1.1, impact: 0.5 },
     calibre: 0.4,
     flash: 0.55,
-    ball: 0.07,
+    // A cavalry carbine: the same ball as the line, off a shorter barrel.
+    ammo: "musketBall",
+    ball: 0.072,
     speed: 0.03,
     smoke: 5,
     smokeTint: null,
@@ -888,10 +907,11 @@ export class SceneEngine {
     if (this.disposed) return;
     this.rebuildPieces();
     this.callbacks.onReady();
-    // The cast ball, fetched behind the game: a few thousand triangles that only
-    // matter the first time somebody pulls a trigger, and a shot falls back to
-    // its additive streak until it lands.
-    void primeShotModel({ url: SHOT_MODEL_URL });
+    // The sculpted Minié round, fetched behind the game: a few thousand triangles
+    // that only matter the first time the marksman pulls a trigger. Until it
+    // lands — and for every other barrel, which is served from the forge in
+    // `scene/ammunition.ts` — the round is turned procedurally instead.
+    void primeShotModel({ url: SHOT_MODEL_URL, ammo: "minieBullet" });
     // The rigs and their stances are in; the strikes, deaths and strides come
     // down behind the game so the first move never waits on seventy GLBs.
     void this.factory.warmClips();
@@ -2082,14 +2102,17 @@ export class SceneEngine {
     // its wheels before the crew heaves it up to the mark again.
     this.kickBack(attacker, blow, gun);
 
-    // Round shot travels flat: no arc, no easing, gone almost before it is seen.
+    // Shot travels flat: no arc, no easing, gone almost before it is seen. Which
+    // round crosses the hall — a cast lead ball that wanders, a rifled Minié that
+    // does not, or a glowing lump of iron — is read off the barrel's loadout.
     const smoking = settings.captureParticles >= 34;
     let nextWisp = 0.12;
     await flyShot(this.scene, this.tweens, muzzle, chest, {
       look,
+      ammo: gun.ammo,
       size: gun.ball,
       flight: THREE.MathUtils.clamp((distance / TILE) * gun.speed, 0.05, 0.2),
-      light: null,
+      light: gun.ammo === "roundShot" && settings.postFx ? this.spellLights.acquire(0xff7a2e, 3.2) : null,
       onTrail: (at, t) => {
         if (!smoking || t < nextWisp) return;
         nextWisp += 0.22;
@@ -2132,6 +2155,42 @@ export class SceneEngine {
       opacity: 0.4,
     });
     this.shake.add(Math.min(1, 0.3 * power));
+
+    // Solid shot does not stay in the man it hits. A six-pound lump of iron
+    // carries clean through and goes on to skip off the stone behind him, which
+    // is the one thing that tells the eye this was a cannon and not a big musket.
+    if (gun.ammo === "roundShot") {
+      const beyond = chest.clone().addScaledVector(aim, TILE * 1.7).setY(BOARD_TOP + 0.05);
+      void (async () => {
+        await flyShot(this.scene, this.tweens, chest, beyond, {
+          look,
+          ammo: gun.ammo,
+          size: gun.ball,
+          flight: 0.12,
+          light: null,
+        });
+        audio.ballImpact({ pan: this.stereoPan(beyond), volume: 0.42 });
+        this.effects.spawnBurst(beyond, 0xffc98a, Math.round(settings.captureParticles * 0.22), {
+          speed: 3.2,
+          life: 0.5,
+          gravity: 5.5,
+          radius: 0.08,
+          size: 0.06,
+          drag: 2.2,
+        });
+        this.effects.spawnSmoke(beyond, {
+          count: 2,
+          radius: 0.2,
+          scale: 0.5,
+          growth: 2.8,
+          life: 0.8,
+          speed: 0.9,
+          rise: 0.35,
+          color: 0x9a8f7e,
+          opacity: 0.3,
+        });
+      })();
+    }
 
     // A field gun does not stop at the body: the stone takes the rest of it.
     if (gun.wave) {

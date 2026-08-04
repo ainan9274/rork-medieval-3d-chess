@@ -97,7 +97,8 @@ src/
     effects.ts         particle bursts, flashes, dissolve, camera shake
     strikes.ts         per-rank blow visuals (slash arc, ground wave, pillar)
     spells.ts          fireball orbs, per-army fire, the shared light pool
-    gunfire.ts         muzzle flashes, round shot, powder smoke banks
+    gunfire.ts         muzzle flashes, rounds in flight, powder smoke banks
+    ammunition.ts      the four rounds: pistol/musket ball, Minié bullet, iron round shot
     postfx.ts          EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
     textures.ts        procedural marble, basalt, bronze, cloth
     quality.ts         graphics presets + auto-detection
@@ -258,12 +259,30 @@ swordsman default made the whole kneel-level-fire drill flash past in a third of
 rifle's sight picture only closes over the interface once the barrel is already up, so the aim is
 watched in the hall first and through the sights second.
 
-The ball itself is a generated mesh (`SHOT_MODEL_URL`, primed by `primeShotModel()`): a cast lead
-Minié bullet pointed down its line of travel and rolling on its axis, with the additive streak
-kept behind it as heat. The sculpt is reported *directionless*, so its measured long axis is taken
-as the nose. Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with
-the synthesised voice dropped to 42 % underneath it for weight, and the ball's arrival has its own
-whine-into-thud (`audio.ballImpact()`). Anything not yet decoded falls back to the synth.
+**Each barrel fires its own round** (`src/scene/ammunition.ts`, chosen by `GUNS[kind].ammo`). Every
+round is a real mesh turned to its period drawing and normalised nose-along-travel, one unit
+nose-to-base, so a shot only scales it by the bore:
+
+| Round | Barrel | Built from | In flight |
+| --- | --- | --- | --- |
+| `pistolBall` | king, commander | cast lead sphere, mould seam + sprue stub | tumbles, wanders ~0.9 calibres |
+| `musketBall` | line infantry, cuirassier | the same ball, fatter and dented by the ramrod | tumbles, wanders ~1.6 calibres |
+| `minieBullet` | marshal-tirailleur | lathed ogive, three grease grooves, hollow base skirt | spins about its nose, dead straight |
+| `roundShot` | battery | pitted sand-cast iron ball with casting seam | glows out of the bore and cools; passes through |
+
+Two materials serve all four: dull cast lead (`metalness 0.92`, `roughness 0.58`) and near-black
+sand-cast iron with an emissive that is animated per shot. **No round is a tracer** — black powder
+never fired one. Lead carries only a faint grey motion smear; the orange glow and the dragged-along
+wake belong to the iron alone, and its emissive cools from the muzzle to the body.
+
+The rifled round is the only one flown as a *generated* sculpt (`SHOT_MODEL_URL`, primed by
+`primeShotModel({ ammo: "minieBullet" })`); the sculpt is reported *directionless*, so its measured
+long axis is taken as the nose. Any kind without a sculpt in hand — or before the GLB lands — is
+forged procedurally instead, so gunfire never waits on a download.
+
+Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with the synthesised
+voice dropped to 42 % underneath it for weight, and the ball's arrival has its own whine-into-thud
+(`audio.ballImpact()`). Anything not yet decoded falls back to the synth.
 
 `GUNS[kind]` also carries the character of the *smoke* as well as the bore. The marksman's rifled
 barrel fires a small, tight-patched charge that burns almost completely, so its bank is built from

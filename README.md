@@ -244,7 +244,8 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
         │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
         │   ├── spells.ts           fireball orbs, per-army fire, the shared light pool
-        │   ├── gunfire.ts          muzzle flashes, round shot, powder smoke banks
+        │   ├── gunfire.ts          muzzle flashes, rounds in flight, powder smoke banks
+        │   ├── ammunition.ts       the four rounds: pistol/musket ball, Minié bullet, iron round shot
         │   ├── postfx.ts           EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
         │   ├── textures.ts         procedural marble, basalt, bronze, cloth
         │   ├── quality.ts          graphics presets + auto-detection
@@ -477,22 +478,52 @@ still closes with the sabre. The beat is:
 4. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
    `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
    smoothbore, pale ash grey for the rifle (see below) — and `audio.gunshot()` fires the report.
-5. `flyShot()` sends the ball **dead straight and fast** — no arc, no easing; the flatness is
-   what separates a gun from a lobbed spell — trailing wisps of smoke as it goes.
+5. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
+   separates a gun from a lobbed spell — trailing wisps of smoke as it goes. A ball out of a
+   *smoothbore* bellies off the line of sight and comes back onto the body (see below); the rifled
+   round is the only one that flies a true line.
 6. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
    by a thud into the body), then flash, sparks, tile strike, camera kick, and for the field gun a
-   wave rolling out across the stone plus a long aftershock.
+   wave rolling out across the stone plus a long aftershock. **Solid shot does not stop in the
+   man**: a second short flight carries the iron a tile and a half past him and skips it off the
+   stone, with its own thud, sparks and dust.
 7. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
    the barrel is charged again before `glide()` walks the shooter onto the cleared square.
 
-**The ball is a real mesh.** `SHOT_MODEL_URL` is a generated cast lead Minié bullet, fetched once
-behind the game (`primeShotModel()`) and flown by `flyShot()`: pointed down its own line of travel
-and rolling on its axis all the way to the body, with the additive streak kept behind it as the
-heat around it rather than as the shot itself. The generator reports the sculpt as *directionless*
-(a body of revolution has no intrinsic front), so the loader takes its **measured long axis** as
-the nose instead of guessing a yaw constant, normalises it to one unit nose-to-base and centres it;
-each shot then only scales it by its calibre. Until the GLB lands — or if it never does — every
-gun still fires the streak alone.
+### The ammunition
+
+**Every barrel fires its own round, and each one is a real mesh** — `src/scene/ammunition.ts` is the
+foundry, and `GUNS[kind].ammo` says what is rammed down which barrel. Nothing here is a glowing
+dot: black powder never fired a tracer, so a round is read by its *shape*, its *metal* and its
+*motion*, and only the iron is allowed to glow.
+
+| Round | Barrel | How it is made | How it flies |
+| --- | --- | --- | --- |
+| **`pistolBall`** | the Emperor, the commander | Cast lead sphere off a two-part mould: raised seam where the halves met, the nipped stub of the sprue, and a surface that is not quite round | Tumbles on the axis it left with; wanders ~0.9 calibres off the line |
+| **`musketBall`** | line infantry, cuirassier | The same ball at .69 and visibly softer — twice the mould deformation, because soft lead rammed down a fouled barrel takes a beating | Tumbles; **wanders ~1.6 calibres** — the fattest, least accurate round on the board |
+| **`minieBullet`** | the marshal-tirailleur | A lathed profile turned to the real drawing: long ogive nose, bearing body cut by **three grease grooves** (they carried the tallow that kept the fouling soft), and the **hollow base** whose skirt the charge blew out into the rifling | Spins hard about its own nose and stays pointing where it was sent. **Zero wander** — the only true line in the army |
+| **`roundShot`** | the battery | Sand-cast iron: an icosphere **pitted** by a stable hash so one vertex in six is a real cavity, with the casting seam still round its middle | Turns slowly, glows out of the bore and **cools across the hall**, drags a bank of air behind it, and carries clean through the body |
+
+Two metals serve all four, cached and shared: dull unpolished **lead** (`metalness 0.92`,
+`roughness 0.58`, `0x82878f`) which never reads as a spark, and near-black **sand-cast iron**
+(`0x2b2a28`, `roughness 0.74`) whose emissive is animated per shot. A heated round is the only one
+that gets its own material clone, so its glow can cool without touching another shot in the air.
+
+What used to be a bright additive core on every shot is now a **motion smear** the width of the
+round, at 0.16–0.22 opacity for lead: it reads as blur, not fire. The orange glow sprite, the
+borrowed point light and the dragged-along wake belong to the iron alone.
+
+The wander is not decoration. A ball rattling down an unrifled barrel leaves it turning, and a
+turning sphere curves — which is exactly why a musket could not be trusted at a hundred paces.
+`flyShot()` bellies the ball out along a tilted cross-axis on a `sin(πt)` curve, so it peaks
+mid-flight and closes back onto the body: visibly not a straight line, still a hit.
+
+Only the rifled round is flown as a **generated sculpt** (`SHOT_MODEL_URL`, primed by
+`primeShotModel({ ammo: "minieBullet" })`). The generator reports it as *directionless* (a body of
+revolution has no intrinsic front), so the loader takes its **measured long axis** as the nose
+instead of guessing a yaw constant, normalises it to one unit nose-to-base and centres it. Every
+other kind — and the rifle too, until the GLB lands — is turned procedurally to the same contract:
+**nose along +Z, centred, one unit long**, so a shot only ever scales it by the bore.
 
 **Black powder is recorded, not only synthesised.** `GUN_AUDIO_URLS` holds one take per barrel
 (pistol, musket, rifle, cannon) plus the ball's impact; they stream in behind the music like the

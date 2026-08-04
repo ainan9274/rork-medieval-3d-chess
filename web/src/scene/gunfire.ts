@@ -17,6 +17,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import type { Faction } from "../core/types";
+import { AMMUNITION, type AmmoKind, type AmmoSpec, disposeAmmunition, loadRound } from "./ammunition";
 import type { SpellLight } from "./spells";
 import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture } from "./textures";
 
@@ -26,7 +27,7 @@ import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture } fro
 export interface GunLook {
   /** The flash at the bore. */
   flash: number;
-  /** The ball in flight, seen as a hot streak. */
+  /** The bloom of burning powder pushed out ahead of the bore. */
   ball: number;
   /** Powder smoke rolling off the barrel. */
   smoke: number;
@@ -85,6 +86,8 @@ const AXES: Record<AxisName, THREE.Vector3> = {
 /** The generated projectile sculpt and the axes it was authored along. */
 export interface ShotModelSource {
   url: string;
+  /** Which round this sculpt is the real article for. */
+  ammo: AmmoKind;
   /**
    * Which way the nose of the ball points in the sculpt's own frame, when the
    * generator reported one. A cast ball is a body of revolution, so it usually
@@ -97,13 +100,14 @@ export interface ShotModelSource {
 }
 
 /**
- * The cast ball itself, normalised once: nose down the flight line, centred on
- * its own middle, and one world unit long, so a shot only has to scale it by
- * its calibre. Null until the sculpt has been fetched (or if it never arrives —
- * every shot then falls back to the additive streak alone).
+ * Generated sculpts, keyed by the round they stand in for and normalised once:
+ * nose down the flight line, centred on its own middle, and one world unit
+ * long, so a shot only has to scale it by its calibre. A kind with no sculpt in
+ * hand is forged procedurally instead (see `ammunition.ts`), so a slow download
+ * never costs the army its ammunition.
  */
-let ballModel: THREE.Object3D | null = null;
-let ballJob: Promise<void> | null = null;
+const sculpts = new Map<AmmoKind, THREE.Object3D>();
+const sculptJobs = new Map<AmmoKind, Promise<void>>();
 
 function basis(front: THREE.Vector3, up: THREE.Vector3): THREE.Quaternion {
   const f = front.clone().normalize();
@@ -136,8 +140,9 @@ function perpendicular(axis: THREE.Vector3): THREE.Vector3 {
  * cost the army its gunfire.
  */
 export function primeShotModel(source: ShotModelSource): Promise<void> {
-  if (ballJob) return ballJob;
-  ballJob = (async () => {
+  const running = sculptJobs.get(source.ammo);
+  if (running) return running;
+  const job = (async () => {
     try {
       const gltf = await new GLTFLoader().loadAsync(source.url);
       // Rotate the sculpt's own frame onto "nose along +Z, up along +Y", which is
@@ -170,15 +175,16 @@ export function primeShotModel(source: ShotModelSource): Promise<void> {
         // of a second; culling it by a stale bounding sphere makes it blink.
         mesh.frustumCulled = false;
       });
-      ballModel = oriented;
+      sculpts.set(source.ammo, oriented);
     } catch (error) {
-      console.warn("[gunfire] ball sculpt unavailable", error);
+      console.warn(`[gunfire] ${source.ammo} sculpt unavailable, forging it instead`, error);
     }
   })();
-  return ballJob;
+  sculptJobs.set(source.ammo, job);
+  return job;
 }
 
-/** Frees the shared maps (scene teardown). */
+/** Frees the shared maps, moulds and metals (scene teardown). */
 export function disposeGunAssets(): void {
   flashMap?.dispose();
   ballMap?.dispose();
@@ -188,6 +194,9 @@ export function disposeGunAssets(): void {
   ballMap = null;
   puffMap = null;
   finePuffMap = null;
+  sculpts.clear();
+  sculptJobs.clear();
+  disposeAmmunition();
 }
 
 export interface MuzzleFlashOptions {
@@ -272,78 +281,149 @@ export async function spawnMuzzleFlash(
 }
 
 /**
- * One shot in flight: a hot streak of a ball, stretched along its own line of
- * travel so it reads at any frame rate. It lives in world space and is placed
- * by {@link flyShot} every frame.
+ * One round in flight.
+ *
+ * The round itself is a real mesh — a sculpt when one has been fetched for that
+ * kind, otherwise forged from `ammunition.ts` — and everything else on it is
+ * there to make the metal legible at speed rather than to make it glow. Cold
+ * lead gets a faint grey smear the width of the ball, which is motion blur, not
+ * fire; hot iron gets a dull glow that cools across the hall and a bank of air
+ * dragged along behind it. It lives in world space and is placed by
+ * {@link flyShot} every frame.
  */
 class Shot {
   readonly group = new THREE.Group();
-  private readonly core: THREE.Sprite;
-  private readonly trail: THREE.Sprite;
+  /** Motion smear along the line of travel. */
+  private readonly smear: THREE.Sprite;
+  /** Heat still in the metal, for a round that left the bore glowing. */
+  private readonly glow: THREE.Sprite | null;
+  /** Air pulled along behind a heavy round. */
+  private readonly wake: THREE.Sprite | null;
   private readonly light: SpellLight | null;
-  /** The cast ball itself, when the sculpt is in hand. */
-  private readonly ball: THREE.Object3D | null;
-  /** Rifling: the ball turns on its own axis all the way to the body. */
-  private readonly spin = (Math.random() > 0.5 ? 1 : -1) * (26 + Math.random() * 16);
+  /** The round itself. */
+  private readonly round: THREE.Object3D;
+  /** Materials whose glow has to cool as the round crosses. */
+  private readonly heated: THREE.MeshStandardMaterial[];
+  private readonly spec: AmmoSpec;
+  /**
+   * What the round turns about. A rifled bullet spins about its own nose; a ball
+   * out of a smoothbore tumbles about whatever axis it happened to leave with.
+   */
+  private readonly axis: THREE.Vector3;
+  private readonly spin: number;
 
-  constructor(look: GunLook, size: number, light: SpellLight | null) {
+  constructor(kind: AmmoKind, look: GunLook, size: number, light: SpellLight | null) {
+    const spec = AMMUNITION[kind];
+    this.spec = spec;
     this.light = light;
-    this.group.name = "shot";
-    this.ball = ballModel ? ballModel.clone(true) : null;
-    if (this.ball) {
-      // A cast ball is longer than it is wide; scale by its length.
-      this.ball.scale.setScalar(size * 2.3);
-      this.group.add(this.ball);
+    this.group.name = `shot_${kind}`;
+    const sculpt = sculpts.get(kind);
+    if (sculpt) {
+      this.round = sculpt.clone(true);
+      this.heated = [];
+    } else {
+      const forged = loadRound(kind);
+      this.round = forged.object;
+      this.heated = forged.heated;
     }
-    this.trail = new THREE.Sprite(
+    // The mesh is one unit nose-to-base, so the bore diameter and the round's
+    // own proportions are all the scale it needs.
+    this.round.scale.setScalar(size * spec.length);
+    this.group.add(this.round);
+
+    this.axis = spec.stabilised
+      ? FORWARD.clone()
+      : new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    this.spin = (Math.random() > 0.5 ? 1 : -1) * spec.twist * (0.85 + Math.random() * 0.3);
+
+    this.smear = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: sharedBallMap(),
-        color: look.smoke,
+        color: spec.streak.color,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-        opacity: 0.4,
+        opacity: spec.streak.opacity,
       }),
     );
-    this.core = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: sharedBallMap(),
-        color: look.ball,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        opacity: 0.95,
-      }),
-    );
-    // With a real ball in frame the streak is only the heat around it.
-    this.trail.scale.set(size * 3.4, size * 0.9, 1);
-    this.core.scale.setScalar(this.ball ? size * 0.7 : size);
-    this.trail.renderOrder = 6;
-    this.core.renderOrder = 7;
-    this.trail.frustumCulled = false;
-    this.core.frustumCulled = false;
-    this.group.add(this.trail, this.core);
+    this.smear.scale.set(size * spec.streak.stretch, size * 0.85, 1);
+    this.smear.renderOrder = 6;
+    this.smear.frustumCulled = false;
+    this.group.add(this.smear);
+
+    if (spec.heat > 0) {
+      this.glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: sharedBallMap(),
+          color: 0xff7a2e,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          opacity: 0.55 * spec.heat,
+        }),
+      );
+      this.glow.scale.setScalar(size * 1.7);
+      this.glow.renderOrder = 7;
+      this.glow.frustumCulled = false;
+      this.group.add(this.glow);
+    } else {
+      this.glow = null;
+    }
+
+    if (spec.wake > 0) {
+      this.wake = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: sharedPuffMap(),
+          color: look.smoke,
+          transparent: true,
+          depthWrite: false,
+          opacity: 0.18,
+        }),
+      );
+      this.wake.scale.setScalar(size * spec.wake);
+      this.wake.renderOrder = 5;
+      this.wake.frustumCulled = false;
+      this.group.add(this.wake);
+    } else {
+      this.wake = null;
+    }
   }
 
-  place(at: THREE.Vector3, intensity: number): void {
+  /**
+   * @param cooling 1 the instant it leaves the bore, 0 by the time it arrives —
+   *   only iron carries enough heat for this to be visible.
+   */
+  place(at: THREE.Vector3, cooling: number): void {
     this.group.position.copy(at);
-    (this.core.material as THREE.SpriteMaterial).opacity = (this.ball ? 0.6 : 0.95) * intensity;
-    (this.trail.material as THREE.SpriteMaterial).opacity = 0.4 * intensity;
-    this.light?.set(at, intensity * 4);
+    const heat = this.spec.heat * (0.4 + cooling * 0.6);
+    if (this.glow) {
+      (this.glow.material as THREE.SpriteMaterial).opacity = 0.55 * heat;
+      this.glow.scale.setScalar(this.smear.scale.y * (1.6 + cooling * 0.5));
+    }
+    for (const material of this.heated) material.emissiveIntensity = 1.15 * heat;
+    this.light?.set(at, heat * 5);
   }
 
-  /** Points the ball down its line of travel and rolls it as it goes. */
+  /**
+   * Points the round down its line of travel and turns it as it goes: a Minié
+   * bullet rolls about its nose and stays pointing where it was sent, a cast
+   * ball tumbles end over end about its own axis.
+   */
   aimAlong(direction: THREE.Vector3, travelled: number): void {
-    const ball = this.ball;
-    if (!ball) return;
-    ball.quaternion.setFromUnitVectors(FORWARD, direction);
-    ball.rotateZ(travelled * this.spin);
+    this.round.quaternion.setFromUnitVectors(FORWARD, direction);
+    this.round.rotateOnAxis(this.axis, travelled * this.spin);
+    // The smear lies behind the round, and the wake further behind still.
+    this.smear.position.copy(direction).multiplyScalar(-this.smear.scale.x * 0.22);
+    this.wake?.position.copy(direction).multiplyScalar(-this.wake.scale.x * 0.42);
   }
 
   dispose(): void {
     this.light?.release();
-    (this.core.material as THREE.Material).dispose();
-    (this.trail.material as THREE.Material).dispose();
+    (this.smear.material as THREE.Material).dispose();
+    if (this.glow) (this.glow.material as THREE.Material).dispose();
+    if (this.wake) (this.wake.material as THREE.Material).dispose();
+    // Only a heated round owns its material; cold lead shares the cached one.
+    for (const material of this.heated) material.dispose();
     this.group.removeFromParent();
     this.group.clear();
   }
@@ -351,20 +431,28 @@ class Shot {
 
 export interface ShotOptions {
   look: GunLook;
-  /** Diameter of the ball in world units. */
+  /** Which round is in the barrel. */
+  ammo: AmmoKind;
+  /** Diameter of the bore in world units. */
   size: number;
   /** Seconds of flight. A ball is fast: keep this short. */
   flight: number;
   /** A slot borrowed from the scene's light pool, or null. */
   light?: SpellLight | null;
-  /** Called with the ball's position every frame, for the smoke it leaves. */
+  /** Called with the round's position every frame, for the smoke it leaves. */
   onTrail?: (at: THREE.Vector3, t: number) => void;
 }
 
 /**
- * Sends a ball from a muzzle to a body: dead straight, no arc, no easing. Round
- * shot travels flat over a chessboard's worth of distance, and the flatness is
- * what tells the eye this is a gun rather than a lobbed spell.
+ * Sends a round from a muzzle to a body: dead straight, no arc, no easing. Shot
+ * travels flat over a chessboard's worth of distance, and the flatness is what
+ * tells the eye this is a gun rather than a lobbed spell.
+ *
+ * The one thing that is *not* straight is a smoothbore ball. A ball rattling
+ * down an unrifled barrel leaves it turning, and a turning sphere curves: it
+ * bellies off the line of sight and comes back onto the body. That is why a
+ * musket could not be trusted at a hundred paces, and the rifled Minié round is
+ * the only thing in the army that flies a true line.
  */
 export async function flyShot(
   scene: THREE.Object3D,
@@ -373,10 +461,16 @@ export async function flyShot(
   to: THREE.Vector3,
   options: ShotOptions,
 ): Promise<void> {
-  const shot = new Shot(options.look, options.size, options.light ?? null);
+  const spec = AMMUNITION[options.ammo];
+  const shot = new Shot(options.ammo, options.look, options.size, options.light ?? null);
   const heading = to.clone().sub(from);
   const distance = Math.max(1e-4, heading.length());
   heading.divideScalar(distance);
+  // The plane the ball bellies out into: across the line of fire, and tilted a
+  // little so the drift is never a flat sideways slide.
+  const drift = new THREE.Vector3(0, 1, 0).cross(heading).normalize();
+  drift.addScaledVector(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 0.7).normalize();
+  const wander = spec.wander * options.size * (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.8);
   shot.place(from, 1);
   shot.aimAlong(heading, 0);
   scene.add(shot.group);
@@ -387,7 +481,10 @@ export async function flyShot(
       easing: (t: number) => t,
       onUpdate: (t: number) => {
         at.lerpVectors(from, to, t);
-        shot.place(at, 1);
+        // Peaks mid-flight and closes again: the ball still finds the body, it
+        // just does not get there in a straight line.
+        if (wander !== 0) at.addScaledVector(drift, wander * Math.sin(Math.PI * t));
+        shot.place(at, 1 - t);
         shot.aimAlong(heading, t * distance);
         options.onTrail?.(at, t);
       },
