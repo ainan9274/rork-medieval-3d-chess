@@ -126,7 +126,7 @@ src/
     weapons.ts         arms per rank: primitives, loadouts, hand/bone mounting
     armoury.ts         fits the generated Napoleonic weapons into the prop frame
     gltfQueue.ts       the one download window every GLB fetch shares
-    rankBadges.ts      floating heraldic crests
+    rankBadges.ts      floating heraldic crests + flat map tokens
     effects.ts         particle bursts, flashes, dissolve, camera shake
     strikes.ts         per-rank blow visuals (slash arc, ground wave, pillar)
     spells.ts          fireball orbs, per-army fire, the shared light pool
@@ -219,6 +219,25 @@ finish, marks the factory stale and rebuilds (taking the old figures down before
 geometry is freed), reloads the rosters, stands the new army up and repoints the mixer's voices.
 With the same skin on both sides only the skin's `native` faction keeps its painted textures;
 the other side falls through `applyFactionLook()` and is tinted into dark livery.
+
+### Telling the two armies apart
+
+The sculpt cannot be trusted to answer "whose is that?". Mirror matches render the *same* sculpt
+for both sides, and two *different* armies both keep their own painted textures (`ownLivery`), so
+at camera distance in a torchlit hall thirty-two dark figures read as one crowd. The side is
+therefore stated in **three** independent channels, tuned so no single one has to carry it
+(`FACTION_RING`, `FACTION_RING_SHAPE`, `FACTION_RIM` in `pieces.ts`):
+
+| Channel | Near side (`w`) | Far side (`b`) | Why |
+| --- | --- | --- | --- |
+| Band on the tile | azure `0x5fb0ff`, **plain double band** | ember `0xff5230`, **spiked sun collar** | Read from any camera height; the *shape* differs too, so it survives colour blindness. `factionRingTexture()` paints one white canvas per shape and the material tints it |
+| Rim light on the silhouette | azure `0x74baff` | ember `0xff6134` | Separates a figure from the piece behind it, not just from the ground. A fresnel term injected next to the dissolve (`installDissolve()`) and added right after `opaque_fragment`, so it is tone-mapped with the frame instead of sitting on it as a decal. Weapons carry it too — the silhouette includes the musket |
+| Rank crest | azure field, gothic heater shield | ember field, stepped sun disc | The plates used to be near-black on both sides with only their bezel metal differing: at badge size that is two dark lozenges |
+
+The band is **painted, not added** (`NormalBlending`, `toneMapped: false`, resting opacity
+`RING_REST` = 0.5). The old additive glow at 0.16 vanished into a lit marble square, which is
+most of the board. Selection, hover, the check alarm and the landing flare still push above the
+resting level, clamped at 1.
 
 **One army wearing both sides is loaded once.** Only the `native` faction's six rosters are
 downloaded; the other side renders the *same* `Template` objects, sharing one `scene` and — the

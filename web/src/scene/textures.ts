@@ -178,6 +178,77 @@ export function radialTexture(inner: string, outer: string): THREE.CanvasTexture
 }
 
 /**
+ * The band painted on the tile under a figure, marking which army it belongs to.
+ *
+ * Colour alone is not enough: it has to survive a dark hall, a bloom pass, a
+ * phone screen and a colour-blind player, so each army also gets its **own
+ * shape** — the kingdoms' plain double band against the empire's spiked sun
+ * collar. Read at a glance from any camera height, and the two never blur into
+ * one another the way two tinted glows do.
+ *
+ * Drawn in white so a single canvas per shape can be tinted per faction.
+ */
+export function factionRingTexture(shape: "band" | "sunburst"): THREE.CanvasTexture {
+  const size = 256;
+  const { canvas, ctx } = createCanvas(size);
+  const c = size / 2;
+
+  // Floor wash: the tile itself takes a little of the army's colour, so a figure
+  // standing on ivory marble is not read against the same neutral ground as one
+  // standing on basalt.
+  const wash = ctx.createRadialGradient(c, c, size * 0.06, c, c, size * 0.46);
+  wash.addColorStop(0, "rgba(255,255,255,0.34)");
+  wash.addColorStop(0.6, "rgba(255,255,255,0.14)");
+  wash.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, size, size);
+
+  const radius = size * 0.375;
+
+  // Bleed first, hard edge second — the band keeps a crisp line even under bloom.
+  ctx.strokeStyle = "rgba(255,255,255,0.24)";
+  ctx.lineWidth = size * 0.11;
+  ctx.beginPath();
+  ctx.arc(c, c, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.96)";
+  ctx.lineWidth = size * 0.045;
+  ctx.beginPath();
+  ctx.arc(c, c, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (shape === "band") {
+    // Second, thinner band inside it: two concentric lines, no teeth.
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = size * 0.016;
+    ctx.beginPath();
+    ctx.arc(c, c, size * 0.285, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    // Spiked collar: twelve tapered rays outside the band.
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    const inner = size * 0.4;
+    const outer = size * 0.487;
+    for (let i = 0; i < 12; i += 1) {
+      const angle = (i / 12) * Math.PI * 2;
+      const spread = 0.055;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.cos(angle) * outer, c + Math.sin(angle) * outer);
+      ctx.lineTo(c + Math.cos(angle - spread) * inner, c + Math.sin(angle - spread) * inner);
+      ctx.lineTo(c + Math.cos(angle + spread) * inner, c + Math.sin(angle + spread) * inner);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/**
  * Reticle drawn on a legal destination square: a bright core dot ringed by a
  * thin halo. Crisp enough to read through torchlight and bloom.
  */

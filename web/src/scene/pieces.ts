@@ -14,7 +14,7 @@ import {
 import type { Faction, PieceKind } from "../core/types";
 import { loadGltf } from "./gltfQueue";
 import { BADGE_LIFT, BADGE_SCALE, TOKEN_SCALE, rankBadgeTexture, tacticalTokenTexture } from "./rankBadges";
-import { radialTexture } from "./textures";
+import { factionRingTexture, radialTexture } from "./textures";
 import { Ease, type TweenManager } from "./tween";
 import { armSculptWarmJobs, attachWeapons, type AttachedArms } from "./weapons";
 
@@ -41,13 +41,63 @@ export const FACTION_ACCENT: Record<Faction, number> = {
   b: 0xff5a4a,
 };
 
+/**
+ * The two identity signals every figure carries, whatever army it is wearing.
+ *
+ * Skins alone cannot answer "whose is that?": when both sides muster the same
+ * army the sculpts are identical, and when they muster *different* ones both
+ * keep their own painted textures (see {@link applyFactionLook}) — so at camera
+ * distance, in a torchlit hall, thirty-two dark figures read as one crowd. The
+ * side is therefore stated twice, in two channels that fail differently:
+ *
+ *  - `ring` — a band painted on the tile the figure stands on, in the army's
+ *    colour *and its own shape* (see {@link factionRingTexture}), so the
+ *    distinction survives even for a colour-blind player.
+ *  - `rim` — a light that rides the silhouette's edge, so a figure is separable
+ *    against the piece behind it and against the floor, not just above its feet.
+ */
+const FACTION_RING: Record<Faction, number> = {
+  w: 0x5fb0ff,
+  b: 0xff5230,
+};
+
+/** Shape of the tile band — the half of the signal that is not colour. */
+const FACTION_RING_SHAPE: Record<Faction, "band" | "sunburst"> = {
+  w: "band",
+  b: "sunburst",
+};
+
+/** Edge light along the silhouette, in the army's colour. */
+const FACTION_RIM: Record<Faction, number> = {
+  w: 0x74baff,
+  b: 0xff6134,
+};
+
+/**
+ * Resting opacity of the tile band. High enough to be read at a glance from a
+ * standing camera without lighting the square like a marker — selection and the
+ * check alarm still have room above it (see {@link PieceView.update}).
+ */
+const RING_REST = 0.5;
+
+/**
+ * How hard the rim light rides the silhouette. Tuned against the darkest map: a
+ * value this side of 1 states the army on the figure's edge without turning a
+ * uniform into a neon outline — the sculpt's own paint still has to be the thing
+ * you look at.
+ */
+const RIM_STRENGTH = 0.62;
+
 /** Light that burns along the dissolving edge — one hue per civilisation. */
 const DISSOLVE_EMBER: Record<Faction, number> = {
   w: 0xa8ccff,
   b: 0xff7a32,
 };
 
-/** Shared uniform block driving one figure's burn-away across all its materials. */
+/**
+ * Shared uniform block driving one figure's burn-away and its faction rim light
+ * across all of its materials — body and weapons alike.
+ */
 interface DissolveUniforms {
   uDissolve: { value: number };
   uDissolveEdge: { value: number };
@@ -55,6 +105,9 @@ interface DissolveUniforms {
   /** (sole line, figure height) in the sculpt's own units. */
   uDissolveSpan: { value: THREE.Vector2 };
   uDissolveEmber: { value: THREE.Color };
+  /** Faction edge light, in linear space (it is added after tone mapping). */
+  uRimColor: { value: THREE.Color };
+  uRimStrength: { value: number };
 }
 
 /** Cheap trilinear value noise — two octaves are enough for a burn edge. */
@@ -83,9 +136,17 @@ float dvNoise(vec3 p) {
 `;
 
 /**
- * Injects a noise burn-away into a lit material. The surface erodes through a
- * drifting noise field with a hot rim riding the edge, so a fallen figure comes
- * apart into the air instead of blinking out.
+ * Injects two things into a lit material: a noise burn-away, and the faction rim
+ * light.
+ *
+ * The burn erodes the surface through a drifting noise field with a hot edge, so
+ * a fallen figure comes apart into the air instead of blinking out.
+ *
+ * The rim is a fresnel term added *after* `opaque_fragment`, which is where the
+ * shaded colour has just been written and tone mapping has not yet run — so the
+ * edge light is graded with the rest of the frame instead of sitting on top of it
+ * as a flat decal. It is what makes an army's silhouette readable against the
+ * figure behind it, at any camera height, in a hall lit by torches.
  *
  * @param heightBias how much the burn sweeps from the soles upward (0 = even)
  */
@@ -98,10 +159,15 @@ function installDissolve(
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vDissolveP;")
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vDissolveP;\nvarying vec3 vRimView;",
+      )
       .replace(
         "#include <project_vertex>",
-        "vDissolveP = transformed;\n#include <project_vertex>",
+        `vDissolveP = transformed;
+vRimView = -(modelViewMatrix * vec4(transformed, 1.0)).xyz;
+#include <project_vertex>`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -112,7 +178,10 @@ uniform float uDissolveEdge;
 uniform float uDissolveScale;
 uniform vec2 uDissolveSpan;
 uniform vec3 uDissolveEmber;
+uniform vec3 uRimColor;
+uniform float uRimStrength;
 varying vec3 vDissolveP;
+varying vec3 vRimView;
 ${DISSOLVE_NOISE}`,
       )
       .replace(
@@ -132,7 +201,11 @@ if (uDissolve > 0.001) {
       )
       .replace(
         "#include <opaque_fragment>",
-        "#include <opaque_fragment>\ngl_FragColor.rgb += uDissolveEmber * dvGlow * 3.2;",
+        `float rimFacing = 1.0 - clamp(dot(normalize(normal), normalize(vRimView)), 0.0, 1.0);
+float rimAmount = pow(rimFacing, 2.7) * uRimStrength * (1.0 - uDissolve);
+#include <opaque_fragment>
+gl_FragColor.rgb += uRimColor * rimAmount;
+gl_FragColor.rgb += uDissolveEmber * dvGlow * 3.2;`,
       );
   };
   // Two materials with identical parameters but different injected source would
@@ -532,6 +605,8 @@ export class PieceView {
       uDissolveScale: { value: 10 / span },
       uDissolveSpan: { value: new THREE.Vector2(baseY, span) },
       uDissolveEmber: { value: new THREE.Color(DISSOLVE_EMBER[color]) },
+      uRimColor: { value: new THREE.Color(FACTION_RIM[color]).convertSRGBToLinear() },
+      uRimStrength: { value: RIM_STRENGTH },
     };
 
     model.traverse((node) => {
@@ -549,14 +624,18 @@ export class PieceView {
       this.meshes.push(mesh);
     });
 
-    const accent = FACTION_ACCENT[color];
+    // Painted onto the tile rather than added to it: an additive glow tinted the
+    // army's colour disappears into a lit marble square (which is most of the
+    // board), and disappearing is the one thing this must not do.
     const glowMaterial = new THREE.MeshBasicMaterial({
-      map: sharedGlowTexture(),
-      color: accent,
+      map: sharedRingTexture(color),
+      color: FACTION_RING[color],
       transparent: true,
-      opacity: 0.16,
+      opacity: RING_REST,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      // The band is an instrument, not lit stone: keep it out of the grade so it
+      // reads the same in a bright hall and a dark one.
+      toneMapped: false,
     });
     this.glow = new THREE.Mesh(sharedDiscGeometry(), glowMaterial);
     this.glow.rotation.x = -Math.PI / 2;
@@ -1357,7 +1436,7 @@ export class PieceView {
       }
     }
     const glowMaterial = this.glow.material as THREE.MeshBasicMaterial;
-    glowMaterial.opacity = 0.16 * value;
+    glowMaterial.opacity = RING_REST * value;
     if (this.shadow) (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.55 * value;
     if (this.badge) {
       (this.badge.material as THREE.SpriteMaterial).opacity = this.badgeOpacity * value;
@@ -1447,8 +1526,10 @@ export class PieceView {
     }
     const glowMaterial = this.glow.material as THREE.MeshBasicMaterial;
     const settle = this.aura * this.aura;
-    const glowTarget =
-      0.16 + (this.selected ? 0.45 : this.hovered ? 0.28 : 0) + alarmPulse * 0.5 + settle * 0.55;
+    const glowTarget = Math.min(
+      1,
+      RING_REST + (this.selected ? 0.5 : this.hovered ? 0.3 : 0) + alarmPulse * 0.4 + settle * 0.4,
+    );
     glowMaterial.opacity += (glowTarget - glowMaterial.opacity) * Math.min(1, delta * 8);
     this.glow.scale.setScalar(1 + (this.selected ? 0.16 : 0) + alarmPulse * 0.25 + settle * 0.5);
 
@@ -1575,10 +1656,14 @@ function sharedTokenGeometry(): THREE.PlaneGeometry {
   return tokenGeometry;
 }
 
-let glowTexture: THREE.Texture | null = null;
-function sharedGlowTexture(): THREE.Texture {
-  if (!glowTexture) glowTexture = radialTexture("rgba(255,255,255,0.9)", "rgba(255,255,255,0)");
-  return glowTexture;
+const ringTextures = new Map<Faction, THREE.Texture>();
+function sharedRingTexture(faction: Faction): THREE.Texture {
+  let texture = ringTextures.get(faction);
+  if (!texture) {
+    texture = factionRingTexture(FACTION_RING_SHAPE[faction]);
+    ringTextures.set(faction, texture);
+  }
+  return texture;
 }
 
 let shadowTexture: THREE.Texture | null = null;

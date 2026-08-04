@@ -19,7 +19,7 @@ export interface MusterChoice {
 /** Blurb under the army rows — honest about what a mirror match looks like. */
 export function armyBlurb(skins: Record<Faction, ArmySkinId>): string {
   return skins.w === skins.b
-    ? `Both sides muster the ${ARMY_SKINS[skins.w].label} — the far side is re-tinted into dark livery so the two forces stay readable.`
+    ? `Both sides muster the ${ARMY_SKINS[skins.w].label} — the near side is marked in azure, the far side in ember, on the ground and along every silhouette.`
     : ARMY_SKINS[skins.w].blurb;
 }
 
@@ -158,13 +158,14 @@ function LockedRow({ label, name, value }: { label: React.ReactNode; name: strin
   );
 }
 
+/** The side's colour code, matching the band painted under its figures. */
 function SideDot({ side }: { side: Faction }) {
   return (
     <span
       className="h-2.5 w-2.5 shrink-0 rounded-full border"
       style={{
-        background: side === "w" ? "#efe2c4" : "#2b2d34",
-        borderColor: side === "w" ? "#f6dfa5aa" : "#8a652266",
+        background: side === "w" ? "#5fb0ff" : "#ff5230",
+        borderColor: side === "w" ? "#bfe0ffcc" : "#ffb083cc",
       }}
     />
   );

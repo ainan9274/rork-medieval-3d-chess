@@ -24,20 +24,28 @@ interface BadgeTheme {
   glow: string;
 }
 
+/**
+ * The crests used to differ only in their metal — gold bezel against orange, both
+ * over a plate that was near-black either way. At badge size that is two dark
+ * lozenges: the shape said which army it was, the colour said nothing. Each
+ * plate is now flooded with its own army's field, so the crest carries the same
+ * azure/ember code as the band under the figure's feet and the light on its
+ * silhouette.
+ */
 const THEMES: Record<Faction, BadgeTheme> = {
   w: {
-    rim: "#edd08c",
-    inner: "#8a672a",
-    plate: "rgba(13,19,33,0.92)",
-    glyph: "#f8ebcb",
-    glow: "rgba(126,172,255,0.55)",
+    rim: "#a8d6ff",
+    inner: "#e8f3ff",
+    plate: "rgba(16,54,120,0.95)",
+    glyph: "#f4fbff",
+    glow: "rgba(110,168,255,0.6)",
   },
   b: {
-    rim: "#ff7d54",
-    inner: "#4ecfbb",
-    plate: "rgba(26,11,9,0.94)",
-    glyph: "#ffd9a4",
-    glow: "rgba(255,108,72,0.55)",
+    rim: "#ffb083",
+    inner: "#ffe6c8",
+    plate: "rgba(122,25,14,0.95)",
+    glyph: "#fff2df",
+    glow: "rgba(255,92,58,0.6)",
   },
 };
 
@@ -275,22 +283,22 @@ interface TokenTheme {
 
 const TOKEN_THEMES: Record<Faction, TokenTheme> = {
   w: {
-    plateIn: "#fbf3e0",
-    plateOut: "#c3b190",
-    rim: "#f0d290",
-    hairline: "#7c5c22",
-    glyph: "#141d33",
-    halo: "rgba(122,168,255,0.5)",
-    notch: "#8a6a2a",
+    plateIn: "#eaf4ff",
+    plateOut: "#7fa8d8",
+    rim: "#bfe0ff",
+    hairline: "#1d3f78",
+    glyph: "#0d2246",
+    halo: "rgba(122,168,255,0.55)",
+    notch: "#2f5c9c",
   },
   b: {
-    plateIn: "#3a1512",
-    plateOut: "#120807",
-    rim: "#ef9a45",
-    hairline: "#4ecfbb",
-    glyph: "#ffd79a",
-    halo: "rgba(255,96,64,0.5)",
-    notch: "#8c3d20",
+    plateIn: "#8e2413",
+    plateOut: "#3d0d07",
+    rim: "#ffa365",
+    hairline: "#ffd0a8",
+    glyph: "#fff0dd",
+    halo: "rgba(255,96,64,0.55)",
+    notch: "#a83d1c",
   },
 };
 

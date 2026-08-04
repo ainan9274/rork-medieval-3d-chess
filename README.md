@@ -45,6 +45,11 @@ cd web && bun install && bun run dev
 - **Rigged 3D characters, not chess pieces** — eighteen sculpts (six per army), each with
   `idle`, `walk`, `attack` and `death` skeletal clips, plus weapons, shields and a floating
   rank crest.
+- **The two armies are never in doubt** — every figure stands inside a band painted on its tile
+  and carries a faction rim light along its silhouette: azure for the near side, ember for the
+  far one. The band's *shape* differs as well as its colour (a plain double band against a
+  spiked sun collar), so the two sides stay separable for a colour-blind player, on a phone, in
+  the darkest map, and in a mirror match where both sides muster the same sculpts.
 - **Three army skins, chosen per side** — Ivory Kingdom, Sun Empire or the Grande Armée, each
   with its own six sculpts, clips, weapon family and voices. Swap either side at any time in
   **Settings → Armies**; the choice is remembered between visits.
@@ -214,6 +219,18 @@ takes the old figures down and stands the new ones up (a second or two on a cold
 sculpts, re-tinted into dark livery so the two forces never become impossible to tell apart, and
 sharing one set of clips with the side it borrows from.
 
+The livery tint is not what makes a side legible, though — it cannot be. Two *different* armies
+both keep their own painted textures, so the tint never runs at all in the common case. Which
+side a figure belongs to is therefore said three times over, in channels that fail differently:
+a **band painted on the tile it stands on**, a **rim light along its silhouette**, and its
+**rank crest** — azure for the near side, ember for the far one. The band also differs in shape
+(the kingdoms' plain double band against the empire's spiked sun collar), so the answer survives
+a colour-blind player as well as a dark hall. The band is *painted* rather than added to the
+tile: the old additive glow disappeared into every lit marble square, which is most of the
+board. The rim is a fresnel edge injected beside the dissolve shader and added before tone
+mapping, so it is graded with the frame instead of sitting on top of it — and it is on the
+weapons too, because a levelled musket is part of the silhouette.
+
 That sharing is why army loads are **serialised**, and why asking for armies that are already
 standing does nothing at all. The app remembers your armies between visits and hands them to the
 board *before* the first download starts, so any non-default choice used to begin a swap and the
@@ -264,7 +281,7 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── weapons.ts          arms per rank: primitives, loadouts, hand/bone mounting
         │   ├── armoury.ts          fits the generated Napoleonic weapons into the prop frame
         │   ├── gltfQueue.ts        the one download window every GLB fetch shares
-        │   ├── rankBadges.ts       floating heraldic crests
+        │   ├── rankBadges.ts       floating heraldic crests, flat map tokens
         │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
         │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
         │   ├── spells.ts           fireball orbs, per-army fire, the shared light pool

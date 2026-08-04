@@ -8,11 +8,17 @@ interface CrestProps {
   active?: boolean;
 }
 
-/** Faction crest: a shield with a lion rampant silhouette. */
+/**
+ * Faction crest: a shield with a lion rampant silhouette.
+ *
+ * The charge and the trim carry the same azure/ember code the board uses for the
+ * band under each figure and the light on its silhouette, so the panel that says
+ * whose turn it is also teaches which colour to look for out on the stone.
+ */
 export const Crest = memo(function Crest({ faction, size = 34, active = false }: CrestProps) {
   const field = faction === "w" ? "#e9dfc8" : "#1d1e24";
-  const charge = faction === "w" ? "#3c5fa8" : "#a8342a";
-  const trim = active ? "#f6dfa5" : "#8a6522";
+  const charge = faction === "w" ? "#2f6dc4" : "#d4402a";
+  const trim = faction === "w" ? (active ? "#a8d6ff" : "#5a8cc8") : active ? "#ffb083" : "#b0563a";
 
   return (
     <svg width={size} height={size * 1.15} viewBox="0 0 40 46" aria-hidden="true">
