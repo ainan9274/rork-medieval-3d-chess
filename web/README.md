@@ -216,6 +216,27 @@ A showcase duel adds a **clarity grade** on top of the preset (`Postfx.setClarit
 field, grain ×0.3, vignette ×0.5 and bloom ×0.62 at a higher threshold, because a duel that is
 watched rather than played needs the sculpts and the squares to read.
 
+### The verdict card
+
+`GameOverModal.tsx` closes every battle, a showcase included. The old render condition was
+`… && !snapshot.demo?.autoRematch`, so a looping showcase — the mode most likely to be watched —
+never named a winner: the board just reset. It now takes an optional `ShowcaseOutcome` and adapts:
+
+- **Framing** — duel number, winning crest, how the game ended, `Squire/Knight/Warlord` for each
+  engine, the move count, the PGN, then **Another duel** / **Great hall**.
+- **A thin backdrop** — `bg-black/35` and no blur for a showcase (a played game keeps `bg-black/65`
+  plus blur). In a showcase the final position is the picture, so the card must not bury it.
+- **It waits for the cinematic** — `SHOWCASE_VERDICT_DELAY_MS` (2.2 s) in `GameShell.tsx` holds the
+  card back while `playEndCinematic` dollies onto the fallen king (~2.4 s).
+- **The loop, made visible** — with auto-rematch armed, `NextDuelCountdown` shows a
+  **NEXT DUEL IN _n_s** bar plus **HOLD** (`setDemoAutoRematch(false)`). It polls
+  `controller.getDemoRematchRemaining()` on its **own 100 ms interval**, the same reason
+  `FieldTally` does: the core publishes on real events and a ticking second must not re-render the
+  overlay. `DEMO_REMATCH_DELAY_MS` went 6.5 s → **9 s** so the result can be read before the reset.
+- **Another duel** calls `controller.restartDemo()` when `mode === "demo"`. Routing it through
+  `startMatch` (as `handleRematch` used to for every mode) mapped `demo` → `ai`, silently turning a
+  showcase into a game against the computer and resetting the duel counter.
+
 ## Armies
 
 Three army skins, chosen per side in **Settings → Armies** and remembered in `localStorage`

@@ -100,7 +100,9 @@ cd web && bun install && bun run dev
   auto-rematch, and a clean capture view with the entire interface hidden. Three camera
   behaviours: hold one angle, follow the figure on the move and close in on the fight, or
   drift slowly around the board. The showcase also renders crisper than a played game —
-  no depth of field, softer grain, vignette and bloom.
+  no depth of field, softer grain, vignette and bloom. Every showcase duel now **ends with a
+  verdict card**: who won and how, the two engine strengths, the record, a countdown on the next
+  duel that can be held, and one tap to roll another duel or return to the hall.
 - **An interface that stays off the board** — icon-only controls with a themed tooltip on every
   one of them (name, one-line explanation, key cap), the move record folded into a corner
   sigil, and a slim showcase rail that collapses to a single icon. One key strips the whole
@@ -195,6 +197,22 @@ The board owns the screen; every panel is either short, in a corner, or foldable
   one clapperboard icon. Pause is shown by a breathing play button instead of a large label.
 - **Cinema mode** (`C`) removes the overlay completely and leaves one small restore button, so
   a screen capture is board-only.
+- **The verdict card** (`GameOverModal.tsx`) closes every battle, a showcase included. It used to be
+  **suppressed** whenever the showcase loop was armed — the most-watched mode was the only one that
+  never said who won, it just silently reset. Now it rises for a showcase too, in its own framing:
+  the duel number, the winning crest and how the game ended, the two engine strengths and the move
+  count, the record, then **Another duel** / **Great hall**. Two things are tuned for an audience
+  rather than a player: the backdrop stays **thin and unblurred** (35%, no blur) because in a
+  showcase the final position *is* the picture, and the card **waits 2.2 s** so the end cinematic
+  can finish its dolly onto the fallen king instead of being cut off by a panel.
+- **The loop, made visible.** With auto-rematch armed the card carries a live **NEXT DUEL IN _n_s**
+  bar and a **HOLD** button that disarms the loop on the spot — so the board cannot reset under a
+  viewer mid-sentence, and stopping it does not mean hunting for the rail. The pause before the next
+  duel was stretched from 6.5 s to **9 s** to leave time to read the result. The countdown reads the
+  deadline off the controller on its **own 100 ms tick** (a running second must not push a snapshot
+  through the whole overlay), and **Another duel** routes through `restartDemo()` so the two engine
+  strengths, the pace and the duel counter survive — sending it through `startMatch` quietly demoted
+  the duel to a game against the computer.
 - **Nothing here is raised by the engine.** The marksman's rifle shot used to close a full-screen
   sight picture over the whole interface; it was removed along with its extra lens punch-in, so a
   rifle kill is watched in the hall like every other one (see
@@ -206,7 +224,7 @@ The board owns the screen; every panel is either short, in a corner, or foldable
 | --- | --- |
 | **Player vs Computer** | Pick your colour, an engine strength and an optional clock |
 | **Two players** | Hotseat on one screen; the camera swings round between turns (switchable) |
-| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera, foldable rail |
+| **Showcase** | Two engines duel on their own — per-side strength, 0.5×–4× pace, auto-rematch, still / follow / orbit camera, foldable rail, verdict card at the end |
 | **Attract** | Leave the menu alone for 30 seconds and a showcase duel starts behind it |
 
 Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.

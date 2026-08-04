@@ -37,8 +37,14 @@ export const DEFAULT_DEMO: DemoOptions = {
   autoRematch: true,
 };
 
-/** How long the board sits on the final position before the next showcase game. */
-const DEMO_REMATCH_DELAY_MS = 6500;
+/**
+ * How long the board sits on the final position before the next showcase game.
+ *
+ * Exported because the result dialog counts this down on screen: a viewer who is
+ * about to be moved on to a fresh duel should be able to see it coming and stop
+ * it, rather than have the board reset under them mid-sentence.
+ */
+export const DEMO_REMATCH_DELAY_MS = 9000;
 
 interface ControllerEvents {
   state: GameSnapshot;
@@ -61,6 +67,8 @@ export class GameController extends Emitter<ControllerEvents> {
   private animator: Animator | null = null;
   private clockTimer: ReturnType<typeof setInterval> | null = null;
   private rematchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** `performance.now()` stamp the queued showcase rematch is due to fire at. */
+  private rematchAt = 0;
   private lastTickAt = 0;
   private generation = 0;
   private paused = false;
@@ -263,6 +271,16 @@ export class GameController extends Emitter<ControllerEvents> {
     this.start({ ...this.options });
   }
 
+  /**
+   * Milliseconds left before the showcase loop starts the next duel, or null
+   * when nothing is queued. Read on the dialog's own tick so a running countdown
+   * never re-renders the whole interface.
+   */
+  getDemoRematchRemaining(): number | null {
+    if (this.rematchTimer === null) return null;
+    return Math.max(0, this.rematchAt - performance.now());
+  }
+
   private releasePause(): void {
     const waiters = this.resumeWaiters;
     this.resumeWaiters = [];
@@ -417,6 +435,7 @@ export class GameController extends Emitter<ControllerEvents> {
   private scheduleDemoRematch(): void {
     if (this.options.mode !== "demo" || !this.options.demo?.autoRematch) return;
     this.clearRematchTimer();
+    this.rematchAt = performance.now() + DEMO_REMATCH_DELAY_MS;
     this.rematchTimer = setTimeout(() => {
       this.rematchTimer = null;
       if (this.status !== "over" || this.options.mode !== "demo") return;

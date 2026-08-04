@@ -19,6 +19,13 @@ import "./medieval.css";
 type Phase = "loading" | "menu" | "playing";
 
 const ATTRACT_DELAY_MS = 30_000;
+/**
+ * How long a finished showcase is left alone before the verdict card rises.
+ * The end cinematic dollies onto the fallen king for ~2.4s — in a duel that is
+ * being watched (or recorded) that shot is the point, so the card waits for it
+ * instead of landing on top of it.
+ */
+const SHOWCASE_VERDICT_DELAY_MS = 2200;
 const RENDER_PREFS_KEY = "kg.render";
 const ARMY_PREFS_KEY = "kg.armies";
 
@@ -348,6 +355,14 @@ export function GameShell() {
 
   const handleRematch = useCallback(() => {
     const current = controller.getSnapshot();
+    // A showcase restarts through the controller so the two engine strengths,
+    // the pacing and the duel counter all survive — routing it through
+    // `startMatch` would quietly demote the duel to a game against the computer.
+    if (current.mode === "demo") {
+      audio.blip("press");
+      controller.restartDemo();
+      return;
+    }
     startMatch({
       mode: current.mode === "hotseat" ? "hotseat" : "ai",
       difficulty: current.difficulty,
@@ -392,6 +407,15 @@ export function GameShell() {
   /** Live per-side clock for the tally, read on its own tick. */
   const getElapsed = useCallback(() => controller.getElapsed(), [controller]);
 
+  /** Live countdown on the queued showcase rematch, read on the dialog's tick. */
+  const getRematchRemaining = useCallback(() => controller.getDemoRematchRemaining(), [controller]);
+
+  /** Stop the showcase loop so the final position stays on the board. */
+  const holdShowcase = useCallback(() => {
+    audio.blip("press");
+    controller.setDemoAutoRematch(false);
+  }, [controller]);
+
   const handlePreviewMove = useCallback((move: LedgerMove | null) => {
     engineRef.current?.previewMove(move ? { from: move.from, to: move.to } : null);
   }, []);
@@ -417,6 +441,19 @@ export function GameShell() {
   const skipIntro = useCallback(() => {
     engineRef.current?.skipIntro();
   }, []);
+
+  // ------------------------------------------------------- showcase verdict
+  const showcaseFinished = phase === "playing" && snapshot.mode === "demo" && snapshot.status === "over";
+  const [verdictReady, setVerdictReady] = useState(false);
+
+  useEffect(() => {
+    if (!showcaseFinished) {
+      setVerdictReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setVerdictReady(true), SHOWCASE_VERDICT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [showcaseFinished]);
 
   return (
     <div
@@ -534,12 +571,32 @@ export function GameShell() {
           />
         ) : null}
 
-        {phase === "playing" && !cinema && snapshot.status === "over" && snapshot.result && !snapshot.demo?.autoRematch ? (
+        {/* The result dialog is shown for a showcase too, looping or not: the
+            viewer is told who won and given the way out. Only a clean capture
+            (cinema) keeps it off screen. */}
+        {phase === "playing" &&
+        !cinema &&
+        snapshot.status === "over" &&
+        snapshot.result &&
+        (snapshot.mode !== "demo" || verdictReady) ? (
           <GameOverModal
             result={snapshot.result}
             pgn={snapshot.pgn}
             playerColor={snapshot.playerColor}
             versusComputer={snapshot.mode === "ai"}
+            moveCount={snapshot.history.length}
+            showcase={
+              snapshot.demo
+                ? {
+                    round: snapshot.demoRound,
+                    white: snapshot.demo.white,
+                    black: snapshot.demo.black,
+                    autoRematch: snapshot.demo.autoRematch,
+                    getRematchRemaining,
+                    onHold: holdShowcase,
+                  }
+                : null
+            }
             onRematch={handleRematch}
             onMenu={returnToMenu}
           />
