@@ -1608,9 +1608,11 @@ export class SceneEngine {
       // The alarm was already lit by the state publish, but the *declaration* is
       // this beat — the moment the move actually lands on the board — so the
       // surge and the rumble are fired from here rather than from `onState`.
-      // A rumble, not a jolt: nothing struck the camera, the hall reacted.
+      // A rumble, not a jolt: nothing struck the camera, the hall reacted. Kept
+      // deliberately faint and short — enough to be felt at the edge of
+      // attention, not enough to move the board under the player's eye.
       this.alarm.strike();
-      this.shake.tremor(0.5, 1.1);
+      this.shake.tremor(0.16, 0.6);
     }
 
     if (

@@ -95,12 +95,14 @@ export class CheckAlarm {
     // Slow heartbeat, weighted toward the dark half so it pulses rather than glows.
     const breath = Math.pow(Math.sin(this.phase * 2.4) * 0.5 + 0.5, 1.6);
     const surge = this.flare * this.flare;
-    const level = this.watch * (0.35 + breath * 0.5) + surge * 1.5;
+    // The watch level is what a player sees for most of a check, so it is held
+    // low: a red edge on the crown, not a lamp washing the surrounding rank.
+    const level = this.watch * (0.2 + breath * 0.26) + surge * 0.7;
 
-    this.lamp.intensity = level * 3.2;
+    this.lamp.intensity = level * 2.1;
     const material = this.halo.material as THREE.SpriteMaterial;
-    material.opacity = Math.min(0.62, level * 0.36);
-    this.halo.scale.setScalar(1.5 + breath * 0.35 + surge * 0.9);
+    material.opacity = Math.min(0.3, level * 0.24);
+    this.halo.scale.setScalar(1.35 + breath * 0.2 + surge * 0.45);
   }
 
   dispose(): void {
