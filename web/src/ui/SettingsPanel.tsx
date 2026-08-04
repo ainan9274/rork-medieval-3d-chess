@@ -1,5 +1,7 @@
 import { X } from "lucide-react";
 
+import { ARMY_SKINS, ARMY_SKIN_ORDER, type ArmySkinId } from "../assets/generated";
+import type { Faction } from "../core/types";
 import { ARENA_LOOKS, ARENA_ORDER, type ArenaTheme } from "../scene/arena";
 import type { QualityPreset } from "../scene/quality";
 
@@ -7,6 +9,8 @@ export interface GameSettings {
   quality: QualityPreset;
   /** Which map the board is staged in. */
   arena: ArenaTheme;
+  /** Which army each side musters. */
+  skins: Record<Faction, ArmySkinId>;
   captureCinematics: boolean;
   rotateBoard: boolean;
   /** Floating rank crests over every figure. */
@@ -51,6 +55,27 @@ export function SettingsPanel({ settings, autoDetected, gpu, fps, onChange, onCl
         </div>
 
         <div className="mc-scroll mc-scroll-shade -mr-2 min-h-0 flex-auto overflow-y-auto pb-1 pr-2">
+        <p className="mc-display mb-2 text-[0.6rem] tracking-[0.3em] text-[#a89268]">Armies</p>
+        <ArmyPicker
+          side="w"
+          name="Near side"
+          chosen={settings.skins.w}
+          onChoose={(skin) => onChange({ ...settings, skins: { ...settings.skins, w: skin } })}
+        />
+        <ArmyPicker
+          side="b"
+          name="Far side"
+          chosen={settings.skins.b}
+          onChoose={(skin) => onChange({ ...settings, skins: { ...settings.skins, b: skin } })}
+        />
+        <p className="mt-2 text-xs italic text-[#9c8b6c]">
+          {settings.skins.w === settings.skins.b
+            ? `Both sides muster the ${ARMY_SKINS[settings.skins.w].label} — the far side is re-tinted into dark livery so the two forces stay readable.`
+            : ARMY_SKINS[settings.skins.w].blurb}
+        </p>
+
+        <div className="mc-rule my-5" />
+
         <p className="mc-display mb-2 text-[0.6rem] tracking-[0.3em] text-[#a89268]">Battleground</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {ARENA_ORDER.map((theme) => (
@@ -146,6 +171,50 @@ export function SettingsPanel({ settings, autoDetected, gpu, fps, onChange, onCl
           onChange={(value) => onChange({ ...settings, muted: !value })}
         />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** One side's army choice: a row of cards, one per skin. */
+function ArmyPicker({
+  side,
+  name,
+  chosen,
+  onChoose,
+}: {
+  side: Faction;
+  name: string;
+  chosen: ArmySkinId;
+  onChoose: (skin: ArmySkinId) => void;
+}) {
+  return (
+    <div className="mb-2">
+      <p className="mb-1.5 flex items-center gap-2 text-[0.66rem] italic text-[#9c8b6c]">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full border"
+          style={{
+            background: side === "w" ? "#efe2c4" : "#2b2d34",
+            borderColor: side === "w" ? "#f6dfa5aa" : "#8a652266",
+          }}
+        />
+        {name}
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {ARMY_SKIN_ORDER.map((skin) => (
+          <button
+            key={skin}
+            type="button"
+            className="mc-army-card"
+            data-active={chosen === skin}
+            onClick={() => onChoose(skin)}
+            title={ARMY_SKINS[skin].blurb}
+          >
+            <span className="mc-army-swatch" data-army={skin} />
+            <span className="mc-display text-[0.64rem] leading-tight text-[#f0e0be]">{ARMY_SKINS[skin].label}</span>
+            <span className="text-[0.58rem] leading-tight text-[#9c8b6c]">{ARMY_SKINS[skin].ranks.p}</span>
+          </button>
+        ))}
       </div>
     </div>
   );

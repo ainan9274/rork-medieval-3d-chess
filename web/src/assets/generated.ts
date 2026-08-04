@@ -10,15 +10,25 @@ import type { Faction, PieceKind } from "../core/types";
 const MODEL_BASE = "https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g540sd";
 
 /**
- * One army's sculpts. The two factions are different civilisations — the ivory
- * kingdom is medieval European, the obsidian army is the Sun Empire — so each
- * one carries its own roster. A missing entry borrows the other army's figure.
+ * One army's sculpts. Every skin is a whole civilisation with its own roster of
+ * six figures; a missing entry falls back to the other side's sculpt and then to
+ * a procedural figure, so the board always fills.
  */
 type Roster<T> = Partial<Record<PieceKind, T>>;
 
+/**
+ * Which procedural weapon family arms a skin's figures. The sculpts themselves
+ * are unarmed (held props break auto-rigging), so the arms are built in
+ * `scene/weapons.ts` and parented to the hand bones.
+ */
+export type ArsenalId = "kingdom" | "sun" | "empire";
+
+/** Selectable army skins. Either side of the board can wear any of them. */
+export type ArmySkinId = "ivory" | "sun" | "empire";
+
 /** Static (unrigged) sculpt per kind — the fallback when a rig fails to load. */
-export const PIECE_MODEL_URLS: Record<Faction, Roster<string>> = {
-  w: {
+const STILL_MODELS: Record<ArmySkinId, Roster<string>> = {
+  ivory: {
     k: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8.glb`,
     q: `${MODEL_BASE}/13928f19-23a3-46ba-9879-aacca58f2886.glb`,
     b: `${MODEL_BASE}/6c99342a-e9a5-4959-a59b-c207e15a5c72.glb`,
@@ -28,13 +38,23 @@ export const PIECE_MODEL_URLS: Record<Faction, Roster<string>> = {
   },
   // Sun Empire: emperor, high priestess, serpent priest, jaguar warrior,
   // temple guardian and eagle footsoldier.
-  b: {
+  sun: {
     k: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7.glb`,
     q: `${MODEL_BASE}/d39273ce-17e5-41df-a7f5-634f944e3467.glb`,
     b: `${MODEL_BASE}/7066c2da-f466-438b-ab74-f2a45b2a0ddb.glb`,
     n: `${MODEL_BASE}/a5ff70a9-b2e7-40e0-b7bc-ea4fe0ba6d5c.glb`,
     r: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee.glb`,
     p: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f.glb`,
+  },
+  // Grande Armée: Napoléon, an imperial commander, marshals of the Empire,
+  // cuirassier champions, artillery guards and line infantry.
+  empire: {
+    k: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8.glb`,
+    q: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952.glb`,
+    b: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c.glb`,
+    n: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1.glb`,
+    r: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2.glb`,
+    p: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e.glb`,
   },
 };
 
@@ -63,8 +83,8 @@ export interface PieceAnimationSet {
   run?: string;
 }
 
-export const PIECE_ANIMATED_MODELS: Record<Faction, Roster<PieceAnimationSet>> = {
-  w: {
+const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
+  ivory: {
   // The crown stands at full height and judges rather than brawls.
   k: {
     rigged: `${MODEL_BASE}/704a772c-4a50-4619-b5ad-6e2bbf9703b8-rigged.glb`,
@@ -121,7 +141,7 @@ export const PIECE_ANIMATED_MODELS: Record<Faction, Roster<PieceAnimationSet>> =
     walk: `${MODEL_BASE}/36d8c7d4-2f42-4672-8908-e9298fce9b69-anim-spear-walk-inplace.glb`,
   },
   },
-  b: {
+  sun: {
     k: {
       rigged: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-rigged.glb`,
       idle: `${MODEL_BASE}/ad5cfb3c-4fbc-4952-a1f1-b1d4a684b2e7-anim-idle.glb`,
@@ -171,6 +191,56 @@ export const PIECE_ANIMATED_MODELS: Record<Faction, Roster<PieceAnimationSet>> =
       walk: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f-anim-spear-walk-inplace.glb`,
     },
   },
+  empire: {
+    // The Emperor never brawls: he passes sentence with the dress sabre.
+    k: {
+      rigged: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-rigged.glb`,
+      idle: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-idle.glb`,
+      attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-sword-judgment.glb`,
+      death: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb`,
+      walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
+    },
+    // The commander fights at range: her cast is the artillery order.
+    q: {
+      rigged: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-rigged.glb`,
+      idle: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-idle.glb`,
+      attack: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-charged-spell-cast.glb`,
+      death: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-dying-backwards.glb`,
+      walk: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-casual-walk-inplace.glb`,
+    },
+    b: {
+      rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
+      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-combat-stance.glb`,
+      attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-charged-spell-cast-1.glb`,
+      death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
+      walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-spear-walk-inplace.glb`,
+    },
+    n: {
+      rigged: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-rigged.glb`,
+      idle: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-combat-stance.glb`,
+      attack: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-charged-slash.glb`,
+      death: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-dying-backwards.glb`,
+      // A cavalryman on foot still swaggers.
+      walk: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-confident-strut-inplace.glb`,
+      run: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-standard-forward-charge-inplace.glb`,
+    },
+    r: {
+      rigged: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-rigged.glb`,
+      idle: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-combat-stance.glb`,
+      attack: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-heavy-hammer-swing.glb`,
+      death: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-knock-down.glb`,
+      // The gun crew's laden trudge — the heaviest tread on the board.
+      walk: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-carry-heavy-cannon-forward-inplace.glb`,
+    },
+    p: {
+      rigged: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-rigged.glb`,
+      idle: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-combat-stance.glb`,
+      attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-thrust-slash.glb`,
+      death: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb`,
+      // Musket at the shoulder — the line infantry marches, it does not stroll.
+      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-spear-walk-inplace.glb`,
+    },
+  },
 };
 
 /**
@@ -193,8 +263,8 @@ const CRY_BASE = "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd"
  * back at their natural pitch instead of speeding a longer take up.
  * Loaded lazily after the mixer unlocks (they are only needed on a capture).
  */
-export const DEATH_CRY_URLS: Record<Faction, Record<PieceKind, string>> = {
-  w: {
+const DEATH_CRIES: Record<ArmySkinId, Record<PieceKind, string>> = {
+  ivory: {
     k: `${CRY_BASE}/c4d801f3-b8e7-42bb-b046-6b21e9ec40a5.mp3`,
     q: `${CRY_BASE}/e01a2d0f-2b13-426b-89b4-d40e67d4b16f.mp3`,
     b: `${CRY_BASE}/4ca6a216-52fc-4882-b51a-9a44d188edac.mp3`,
@@ -202,7 +272,7 @@ export const DEATH_CRY_URLS: Record<Faction, Record<PieceKind, string>> = {
     r: `${CRY_BASE}/f9d84835-112f-46de-951b-052f867814da.mp3`,
     p: `${CRY_BASE}/e4caca0d-8f61-4228-b349-025ae499cde5.mp3`,
   },
-  b: {
+  sun: {
     k: `${CRY_BASE}/7efd7eb4-936a-4488-83ae-e0ebea314601.mp3`,
     // Young female voice — a plain drawn-out "ahhhh" scream cut by a gasp.
     q: `${CRY_BASE}/6fe2ac5d-b4e4-4655-9354-cfbb117bc7f5.mp3`,
@@ -212,7 +282,88 @@ export const DEATH_CRY_URLS: Record<Faction, Record<PieceKind, string>> = {
     // Deep male voice — a rising shout cut short by the death gasp.
     p: `${CRY_BASE}/ffa27c35-53ff-4f3a-a71e-285aff8a2a4b.mp3`,
   },
+  // The Grande Armée borrows the European voices: same language of pain, and
+  // the queen's breathy sigh already fits an imperial commander.
+  empire: {
+    k: `${CRY_BASE}/c4d801f3-b8e7-42bb-b046-6b21e9ec40a5.mp3`,
+    q: `${CRY_BASE}/e01a2d0f-2b13-426b-89b4-d40e67d4b16f.mp3`,
+    b: `${CRY_BASE}/4ca6a216-52fc-4882-b51a-9a44d188edac.mp3`,
+    n: `${CRY_BASE}/ebb33bba-cf2b-481f-aec6-4465a6a35253.mp3`,
+    r: `${CRY_BASE}/f9d84835-112f-46de-951b-052f867814da.mp3`,
+    p: `${CRY_BASE}/e4caca0d-8f61-4228-b349-025ae499cde5.mp3`,
+  },
 };
+
+/** One selectable civilisation: sculpts, clips, arms, names and voices. */
+export interface ArmySkin {
+  id: ArmySkinId;
+  /** Army name, as shown in the settings panel. */
+  label: string;
+  /** One line of flavour under the name. */
+  blurb: string;
+  /** Rank names, longest to shortest silhouette — used by the crests. */
+  ranks: Record<PieceKind, string>;
+  /** Procedural weapon family the figures are armed from. */
+  arsenal: ArsenalId;
+  /**
+   * The side this army was painted for. When both sides wear the same skin the
+   * native one keeps its own textures and the other is re-tinted into livery,
+   * so the two armies never become indistinguishable.
+   */
+  native: Faction;
+  still: Roster<string>;
+  animated: Roster<PieceAnimationSet>;
+  cries: Record<PieceKind, string>;
+}
+
+export const ARMY_SKINS: Record<ArmySkinId, ArmySkin> = {
+  ivory: {
+    id: "ivory",
+    label: "Ivory Kingdom",
+    blurb: "Medieval Europe — plate, heater shields and witchfire.",
+    ranks: { k: "King", q: "Queen", b: "Mage", n: "Knight", r: "Guardian", p: "Footman" },
+    arsenal: "kingdom",
+    native: "w",
+    still: STILL_MODELS.ivory,
+    animated: ANIMATED_MODELS.ivory,
+    cries: DEATH_CRIES.ivory,
+  },
+  sun: {
+    id: "sun",
+    label: "Sun Empire",
+    blurb: "Obsidian, jade and quetzal plumes under a stepped sun.",
+    ranks: { k: "Emperor", q: "Priestess", b: "Serpent Priest", n: "Jaguar Warrior", r: "Temple Guardian", p: "Eagle Warrior" },
+    arsenal: "sun",
+    native: "b",
+    still: STILL_MODELS.sun,
+    animated: ANIMATED_MODELS.sun,
+    cries: DEATH_CRIES.sun,
+  },
+  empire: {
+    id: "empire",
+    label: "Grande Armée",
+    blurb: "Napoleonic France — navy and gold, sabres, muskets and cannon.",
+    ranks: {
+      k: "Napoléon",
+      q: "Imperial Commander",
+      b: "Marshal",
+      n: "Cuirassier",
+      r: "Artillery Guard",
+      p: "Line Infantry",
+    },
+    arsenal: "empire",
+    native: "b",
+    still: STILL_MODELS.empire,
+    animated: ANIMATED_MODELS.empire,
+    cries: DEATH_CRIES.empire,
+  },
+};
+
+/** Presentation order of the skins in the settings panel. */
+export const ARMY_SKIN_ORDER: ArmySkinId[] = ["ivory", "sun", "empire"];
+
+/** Which army each side musters until the player says otherwise. */
+export const DEFAULT_ARMY_SKINS: Record<Faction, ArmySkinId> = { w: "ivory", b: "sun" };
 
 export const AUDIO_URLS = {
   ambience: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/e62d5bb9-8c84-4464-8696-dbcf975f938b.mp3",

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+import { ARMY_SKINS, type ArmySkinId } from "../assets/generated";
 import type { GameController } from "../core/gameController";
 import type { Faction, GameSnapshot, MoveEvent, PieceKind, SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
@@ -392,6 +393,10 @@ export class SceneEngine {
   private movesInFlight = 0;
   /** A rebuild waiting for the board to go quiet (see {@link setQuality}). */
   private rebuildPending = false;
+  /** Armies the player has asked for, applied by {@link syncArmies}. */
+  private wantedSkins: Record<Faction, ArmySkinId> | null = null;
+  /** True while the sculpts are being swapped, so requests queue instead of racing. */
+  private swappingArmies = false;
   private promotionGroup: THREE.Group | null = null;
   private promotionViews: PieceView[] = [];
   private promotionResolve: ((kind: PieceKind) => void) | null = null;
@@ -3099,6 +3104,56 @@ export class SceneEngine {
   /** One line naming the driver, for the settings panel and bug reports. */
   getGpuSummary(): string {
     return describeGpu(this.gpu);
+  }
+
+  /**
+   * Musters a different army on one or both sides. The sculpts have to be
+   * re-downloaded, so the swap runs in the background: any beat in flight is
+   * allowed to finish, every standing figure comes down (its geometry belongs to
+   * a template about to be freed), the new rosters load, and the board is stood
+   * back up. A request arriving during a swap replaces the pending one.
+   */
+  setArmySkins(skins: Record<Faction, ArmySkinId>): void {
+    this.wantedSkins = { w: skins.w, b: skins.b };
+    void this.syncArmies();
+  }
+
+  /** The army each side is currently mustering. */
+  getArmySkins(): Record<Faction, ArmySkinId> {
+    return this.factory.getSkins();
+  }
+
+  private async syncArmies(): Promise<void> {
+    if (this.swappingArmies) return;
+    this.swappingArmies = true;
+    try {
+      while (!this.disposed) {
+        const wanted = this.wantedSkins;
+        this.wantedSkins = null;
+        if (!wanted || !this.factory.setSkins(wanted)) break;
+
+        // A figure caught mid-march would be holding a sculpt that is about to
+        // be freed, so the fight on screen finishes first.
+        while (this.movesInFlight > 0 && !this.disposed) await wait(0.1);
+        if (this.disposed) return;
+
+        // Stale first, so the rebuild only tears the old army down.
+        this.factory.markStale();
+        this.rebuildPieces();
+        try {
+          await this.factory.reload();
+        } catch (error) {
+          console.warn("[scene] could not muster the new army", error);
+        }
+        if (this.disposed) return;
+        this.rebuildPieces();
+        const skins = this.factory.getSkins();
+        audio.setArmyCries({ w: ARMY_SKINS[skins.w].cries, b: ARMY_SKINS[skins.b].cries });
+        void this.factory.warmClips();
+      }
+    } finally {
+      this.swappingArmies = false;
+    }
   }
 
   /** Rebuilds every figure from the chess core (used after undo). */

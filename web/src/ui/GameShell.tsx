@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { ARMY_SKINS, DEFAULT_ARMY_SKINS, type ArmySkinId } from "../assets/generated";
 import { audio } from "../audio/audioManager";
 import { GameController } from "../core/gameController";
-import type { LedgerMove } from "../core/types";
+import type { Faction, LedgerMove } from "../core/types";
 import { Clapperboard } from "lucide-react";
 import { ARENA_LOOKS, DEFAULT_ARENA, type ArenaTheme } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
@@ -18,10 +19,35 @@ type Phase = "loading" | "menu" | "playing";
 
 const ATTRACT_DELAY_MS = 30_000;
 const RENDER_PREFS_KEY = "kg.render";
+const ARMY_PREFS_KEY = "kg.armies";
 
 interface RenderPrefs {
   safeMode: boolean;
   brightness: number;
+}
+
+/** The armies chosen last visit — a skin is a taste, not a session setting. */
+function loadArmyPrefs(): Record<Faction, ArmySkinId> {
+  const fallback: Record<Faction, ArmySkinId> = { ...DEFAULT_ARMY_SKINS };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(ARMY_PREFS_KEY);
+    if (!raw) return fallback;
+    const stored = JSON.parse(raw) as Partial<Record<Faction, string>>;
+    const pick = (value: string | undefined, side: Faction): ArmySkinId =>
+      value && value in ARMY_SKINS ? (value as ArmySkinId) : fallback[side];
+    return { w: pick(stored.w, "w"), b: pick(stored.b, "b") };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveArmyPrefs(skins: Record<Faction, ArmySkinId>): void {
+  try {
+    window.localStorage.setItem(ARMY_PREFS_KEY, JSON.stringify(skins));
+  } catch {
+    // Private browsing — the choice just will not survive the reload.
+  }
 }
 
 /**
@@ -63,9 +89,11 @@ export function GameShell() {
 
   const detected = useMemo<QualityPreset>(() => detectQualityPreset(), []);
   const initialRender = useMemo<RenderPrefs>(() => loadRenderPrefs(), []);
+  const initialArmies = useMemo<Record<Faction, ArmySkinId>>(() => loadArmyPrefs(), []);
   const [settings, setSettings] = useState<GameSettings>(() => ({
     quality: detected,
     arena: DEFAULT_ARENA,
+    skins: initialArmies,
     captureCinematics: true,
     rotateBoard: true,
     rankBadges: true,
@@ -142,6 +170,9 @@ export function GameShell() {
 
     engineRef.current = engine;
     engine.setInteractive(false);
+    // Set before the first load so the chosen armies are the ones downloaded.
+    engine.setArmySkins(initialArmies);
+    audio.setArmyCries({ w: ARMY_SKINS[initialArmies.w].cries, b: ARMY_SKINS[initialArmies.b].cries });
     engine.setSafeMode(initialRender.safeMode);
     engine.setBrightness(initialRender.brightness);
     setGpu(engine.getGpuSummary());
@@ -157,7 +188,7 @@ export function GameShell() {
       engineRef.current = null;
       engine.dispose();
     };
-  }, [controller, detected, initialRender]);
+  }, [controller, detected, initialArmies, initialRender]);
 
   useEffect(() => () => controller.dispose(), [controller]);
 
@@ -180,6 +211,7 @@ export function GameShell() {
     if (!engine) return;
     engine.setQuality(settings.quality);
     engine.setArena(settings.arena);
+    engine.setArmySkins(settings.skins);
     engine.setCaptureCinematics(settings.captureCinematics);
     engine.setRotateBoard(settings.rotateBoard);
     engine.setRankBadges(settings.rankBadges);
@@ -187,6 +219,7 @@ export function GameShell() {
     engine.setBrightness(settings.brightness);
     audio.setMuted(settings.muted);
     saveRenderPrefs({ safeMode: settings.safeMode, brightness: settings.brightness });
+    saveArmyPrefs(settings.skins);
   }, [settings]);
 
   // ------------------------------------------------------------- attract mode

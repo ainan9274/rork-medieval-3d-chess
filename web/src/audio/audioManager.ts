@@ -1,4 +1,4 @@
-import { AUDIO_URLS, DEATH_CRY_URLS } from "../assets/generated";
+import { ARMY_SKINS, AUDIO_URLS, DEFAULT_ARMY_SKINS } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
 
 type SfxName = "place" | "capture" | "check" | "fanfare";
@@ -194,9 +194,18 @@ export class AudioManager {
   /** Music/ambience sub-bus, ducked underneath death cries. */
   private bedBus: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
-  /** Per-figure death cries keyed `${faction}${kind}`, streamed on demand. */
+  /** Decoded death cries keyed by their URL, streamed on demand. */
   private voices = new Map<string, AudioBuffer>();
   private voiceLoads = new Map<string, Promise<void>>();
+  /**
+   * Whose voices each side dies with. Swapped when the player musters a
+   * different army, so a French line infantryman never screams like a jaguar
+   * warrior.
+   */
+  private cries: Record<Faction, Record<PieceKind, string>> = {
+    w: ARMY_SKINS[DEFAULT_ARMY_SKINS.w].cries,
+    b: ARMY_SKINS[DEFAULT_ARMY_SKINS.b].cries,
+  };
   private activeVoices = 0;
   private beds = new Map<BedName, Bed>();
   private muted = false;
@@ -316,6 +325,15 @@ export class AudioManager {
   }
 
   /** Warms every cry in the background once the mixer is alive. */
+  /**
+   * Points each side at its army's voices and warms the new clips. Cries already
+   * decoded stay cached (they are keyed by URL), so switching back is instant.
+   */
+  setArmyCries(cries: Record<Faction, Record<PieceKind, string>>): void {
+    this.cries = { w: cries.w, b: cries.b };
+    if (this.ctx) void this.primeDeathCries();
+  }
+
   private async primeDeathCries(): Promise<void> {
     const factions: Faction[] = ["w", "b"];
     const kinds: PieceKind[] = ["k", "q", "b", "n", "r", "p"];
@@ -325,11 +343,10 @@ export class AudioManager {
   }
 
   private loadDeathCry(faction: Faction, kind: PieceKind): Promise<void> {
-    const key = `${faction}${kind}`;
-    const pending = this.voiceLoads.get(key);
-    if (pending) return pending;
-    const url = DEATH_CRY_URLS[faction]?.[kind];
+    const url = this.cries[faction]?.[kind];
     if (!url) return Promise.resolve();
+    const pending = this.voiceLoads.get(url);
+    if (pending) return pending;
     const job = (async () => {
       try {
         const response = await fetch(url);
@@ -337,15 +354,15 @@ export class AudioManager {
         const ctx = this.ctx;
         if (!ctx) {
           // Mixer went away mid-flight — let a later capture try again.
-          this.voiceLoads.delete(key);
+          this.voiceLoads.delete(url);
           return;
         }
-        this.voices.set(key, await ctx.decodeAudioData(raw));
+        this.voices.set(url, await ctx.decodeAudioData(raw));
       } catch (error) {
-        console.warn(`[audio] death cry "${key}" failed to load`, error);
+        console.warn(`[audio] death cry "${faction}${kind}" failed to load`, error);
       }
     })();
-    this.voiceLoads.set(key, job);
+    this.voiceLoads.set(url, job);
     return job;
   }
 
@@ -357,7 +374,8 @@ export class AudioManager {
    */
   deathCry(faction: Faction, kind: PieceKind, options: DeathCryOptions = {}): void {
     if (!this.ctx || !this.master || this.muted) return;
-    const buffer = this.voices.get(`${faction}${kind}`);
+    const url = this.cries[faction]?.[kind];
+    const buffer = url ? this.voices.get(url) : undefined;
     if (!buffer) {
       void this.loadDeathCry(faction, kind);
       return;

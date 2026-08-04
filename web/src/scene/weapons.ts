@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+import type { ArsenalId } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
 
 type WeaponRole =
@@ -52,7 +53,15 @@ type WeaponId =
   | "sunScepter"
   | "stoneMaul"
   | "chimalli"
-  | "greatChimalli";
+  | "greatChimalli"
+  // Grande Armée
+  | "imperialSabre"
+  | "eagleStaff"
+  | "marshalBaton"
+  | "cavalrySabre"
+  | "artilleryRammer"
+  | "eagleShield"
+  | "musketBayonet";
 
 interface WeaponSpec {
   build: () => Part[];
@@ -259,6 +268,71 @@ function macuahuitlParts(size: number, royal: boolean): Part[] {
         role: "feather" as const,
       })),
     );
+  }
+  return parts;
+}
+
+/**
+ * Sabre blade: a fan of short tapering segments laid along an arc, so the edge
+ * sweeps forward the way a cavalry sabre does. Segments overlap slightly so the
+ * joints do not show as notches at gameplay scale.
+ *
+ * @param curve total sweep from ricasso to point, in radians
+ */
+function curvedBlade(
+  length: number,
+  width: number,
+  thickness: number,
+  base: number,
+  curve: number,
+  segments = 5,
+): THREE.BufferGeometry[] {
+  const parts: THREE.BufferGeometry[] = [];
+  const step = length / segments;
+  let x = 0;
+  let y = base;
+  for (let i = 0; i < segments; i += 1) {
+    const angle = curve * (i / segments);
+    const top = 1 - (i + 1) / (segments + 1.4);
+    const bottom = 1 - i / (segments + 1.4);
+    const segment = new THREE.CylinderGeometry(0.5 * top, 0.5 * bottom, step * 1.1, 4, 1);
+    segment.rotateY(Math.PI / 4);
+    segment.scale(width, 1, thickness);
+    segment.translate(0, step / 2, 0);
+    segment.rotateZ(-angle);
+    segment.translate(x, y, 0);
+    parts.push(segment);
+    x += Math.sin(angle) * step;
+    y += Math.cos(angle) * step;
+  }
+  return parts;
+}
+
+/** Knuckle bow: a half torus standing in the blade's own plane. */
+function knuckleBow(radius: number, tube: number, y: number): THREE.BufferGeometry {
+  const geometry = new THREE.TorusGeometry(radius, tube, 6, 14, Math.PI);
+  geometry.rotateZ(-Math.PI / 2);
+  geometry.translate(0, y, 0);
+  return geometry;
+}
+
+/** Spread eagle: a body ball flanked by two swept wings, for imperial finials. */
+function eagleParts(size: number, y: number, role: WeaponRole): Part[] {
+  const body = new THREE.SphereGeometry(size * 0.42, 12, 9);
+  body.scale(0.8, 1.15, 0.8);
+  body.translate(0, y, 0);
+  const head = new THREE.SphereGeometry(size * 0.2, 10, 8);
+  head.translate(0, y + size * 0.5, size * 0.1);
+  const parts: Part[] = [
+    { geometry: body, role },
+    { geometry: head, role },
+  ];
+  for (const side of [-1, 1]) {
+    const wing = new THREE.BoxGeometry(size * 1.05, size * 0.5, size * 0.11);
+    wing.translate(side * size * 0.62, 0, 0);
+    wing.rotateZ(side * -0.42);
+    wing.translate(0, y + size * 0.22, 0);
+    parts.push({ geometry: wing, role });
   }
   return parts;
 }
@@ -600,6 +674,165 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     offset: new THREE.Vector3(0.055, 0.02, 0.06),
     build: () => chimalliParts(0.185, 0.16),
   },
+
+  // ----------------------------------------------------------- Grande Armée
+
+  /**
+   * Napoléon: the Emperor's dress sabre — a gilt knuckle-bow hilt under a long
+   * lightly curved blade, carried point-up like a marshal's baton of office.
+   */
+  imperialSabre: {
+    grip: 0.095,
+    aim: new THREE.Vector3(-0.05, 1, 0.14),
+    offset: new THREE.Vector3(0.02, 0, 0.03),
+    build: () => [
+      { geometry: shaft(0.16, 0.016, 0.014), role: "leather" },
+      { geometry: ball(0.03, -0.012), role: "gold" },
+      { geometry: ring(0.023, 0.008, 0.152), role: "gold" },
+      { geometry: knuckleBow(0.062, 0.009, 0.09), role: "gold" },
+      { geometry: box(0.13, 0.022, 0.03, 0.176), role: "gold" },
+      { geometry: ball(0.019, 0.176, 0.066), role: "gold" },
+      { geometry: box(0.05, 0.038, 0.028, 0.2), role: "gold" },
+      ...curvedBlade(0.5, 0.075, 0.02, 0.216, 0.34).map((geometry) => ({
+        geometry,
+        role: "steel" as const,
+      })),
+    ],
+  },
+  /**
+   * Imperial commander: a gold staff of command crowned with a spread eagle.
+   * The eagle's breast is the casting point, so her volleys leave the finial.
+   */
+  eagleStaff: {
+    grip: 0.16,
+    focus: 0.575,
+    aim: new THREE.Vector3(-0.04, 1, 0.1),
+    offset: new THREE.Vector3(0.02, 0, 0.03),
+    build: () => [
+      { geometry: shaft(0.5, 0.016, 0.014), role: "gold" },
+      { geometry: ball(0.026, 0.0), role: "gold" },
+      { geometry: ring(0.024, 0.008, 0.14), role: "cloth" },
+      { geometry: ring(0.024, 0.008, 0.34), role: "cloth" },
+      { geometry: ring(0.034, 0.009, 0.5), role: "gold" },
+      { geometry: box(0.07, 0.026, 0.05, 0.52), role: "gold" },
+      ...eagleParts(0.086, 0.575, "gold"),
+      { geometry: ball(0.017, 0.575, 0, 0.05), role: "gem" },
+    ],
+  },
+  /**
+   * Marshal of the Empire: the short velvet baton of office, gold-capped and
+   * eagle-tipped. Short enough to keep the marshal's silhouette narrow, and the
+   * cap is where his artillery order is signalled from.
+   */
+  marshalBaton: {
+    grip: 0.12,
+    focus: 0.36,
+    aim: new THREE.Vector3(-0.03, 1, 0.09),
+    offset: new THREE.Vector3(0.02, 0, 0.03),
+    build: () => [
+      { geometry: shaft(0.3, 0.018, 0.018), role: "cloth" },
+      { geometry: shaft(0.03, 0.023), role: "gold" },
+      { geometry: ring(0.023, 0.007, 0.062), role: "gold" },
+      { geometry: ring(0.023, 0.007, 0.238), role: "gold" },
+      { geometry: shaft(0.035, 0.023).translate(0, 0.28, 0), role: "gold" },
+      ...eagleParts(0.062, 0.355, "gold"),
+      { geometry: ball(0.013, 0.352, 0, 0.036), role: "gem" },
+    ],
+  },
+  /** Cuirassier: the heavy straight-backed cavalry sabre, brass bowl guard. */
+  cavalrySabre: {
+    grip: 0.08,
+    aim: new THREE.Vector3(-0.07, 1, 0.18),
+    offset: new THREE.Vector3(0.02, 0, 0.03),
+    build: () => {
+      const bowl = new THREE.SphereGeometry(0.058, 14, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
+      bowl.scale(1, 0.6, 1);
+      bowl.translate(0, 0.158, 0.012);
+      const bowlFace = new THREE.CylinderGeometry(0.058, 0.058, 0.008, 16);
+      bowlFace.translate(0, 0.157, 0.012);
+      return [
+        { geometry: shaft(0.14, 0.017, 0.015), role: "leather" },
+        { geometry: ring(0.019, 0.006, 0.04), role: "gold" },
+        { geometry: ring(0.019, 0.006, 0.1), role: "gold" },
+        { geometry: ball(0.026, -0.01), role: "gold" },
+        { geometry: bowl, role: "gold" },
+        { geometry: bowlFace, role: "gold" },
+        { geometry: box(0.044, 0.03, 0.028, 0.178), role: "gold" },
+        ...curvedBlade(0.44, 0.08, 0.021, 0.192, 0.52).map((geometry) => ({
+          geometry,
+          role: "steel" as const,
+        })),
+      ];
+    },
+  },
+  /**
+   * Artillery guard: the gun's rammer — a long ash stave under a banded oak
+   * head, swung like a maul when the battery is overrun.
+   */
+  artilleryRammer: {
+    grip: 0.17,
+    aim: new THREE.Vector3(-0.05, 1, 0.13),
+    offset: new THREE.Vector3(0.02, 0, 0.03),
+    build: () => {
+      const head = new THREE.CylinderGeometry(0.088, 0.088, 0.17, 16);
+      head.translate(0, 0.56, 0);
+      return [
+        { geometry: shaft(0.48, 0.019, 0.017), role: "wood" },
+        { geometry: shaft(0.16, 0.021), role: "leather" },
+        { geometry: ring(0.026, 0.008, 0.44), role: "gold" },
+        { geometry: head, role: "wood" },
+        { geometry: ring(0.09, 0.011, 0.5), role: "gold" },
+        { geometry: ring(0.09, 0.011, 0.62), role: "gold" },
+        { geometry: ball(0.05, 0.655), role: "steel" },
+        { geometry: spike(0.014, 0.038, -0.036, Math.PI), role: "steel" },
+      ];
+    },
+  },
+  /**
+   * Artillery guard off-hand: the battery's rectangular mantlet, faced with a
+   * gilt imperial eagle. Wide and flat — the fortress read of the rook.
+   */
+  eagleShield: {
+    grip: 0,
+    shield: true,
+    half: 0.23,
+    aim: new THREE.Vector3(0.34, 0.03, 1),
+    offset: new THREE.Vector3(0.055, 0.02, 0.06),
+    build: () => {
+      const eagle = eagleParts(0.12, 0.02, "gold").map((part) => {
+        part.geometry.translate(0, 0, 0.026);
+        return part;
+      });
+      return [
+        { geometry: box(0.3, 0.44, 0.024, 0), role: "cloth" },
+        { geometry: box(0.32, 0.03, 0.03, 0.215), role: "gold" },
+        { geometry: box(0.32, 0.03, 0.03, -0.215), role: "gold" },
+        { geometry: box(0.028, 0.46, 0.03, 0, 0.15), role: "gold" },
+        { geometry: box(0.028, 0.46, 0.03, 0, -0.15), role: "gold" },
+        ...eagle,
+      ];
+    },
+  },
+  /**
+   * Line infantry: the Charleville musket with the bayonet fixed — the longest
+   * silhouette on the board and the pawn's whole identity from above.
+   */
+  musketBayonet: {
+    grip: 0.26,
+    aim: new THREE.Vector3(-0.03, 1, 0.06),
+    offset: new THREE.Vector3(0.018, 0, 0.028),
+    build: () => [
+      { geometry: box(0.032, 0.3, 0.056, 0.15), role: "wood" },
+      { geometry: box(0.036, 0.05, 0.075, 0.022), role: "wood" },
+      { geometry: box(0.038, 0.026, 0.078, 0.005), role: "steel" },
+      { geometry: box(0.03, 0.075, 0.05, 0.235), role: "gold" },
+      { geometry: shaft(0.4, 0.012, 0.013).translate(0, 0.29, 0), role: "steel" },
+      { geometry: ring(0.017, 0.006, 0.36), role: "gold" },
+      { geometry: ring(0.017, 0.006, 0.52), role: "gold" },
+      { geometry: box(0.024, 0.06, 0.03, 0.66), role: "steel" },
+      { geometry: blade(0.17, 0.028, 0.014, 0.14, 0.69), role: "steel" },
+    ],
+  },
 };
 
 interface Loadout {
@@ -607,9 +840,9 @@ interface Loadout {
   off?: WeaponId;
 }
 
-/** Right-hand arm and off-hand shield per army and piece kind. */
-const LOADOUT: Record<Faction, Record<PieceKind, Loadout>> = {
-  w: {
+/** Right-hand arm and off-hand shield per weapon family and piece kind. */
+const LOADOUT: Record<ArsenalId, Record<PieceKind, Loadout>> = {
+  kingdom: {
     k: { main: "greatsword" },
     q: { main: "scepter" },
     b: { main: "crystalStaff" },
@@ -617,13 +850,23 @@ const LOADOUT: Record<Faction, Record<PieceKind, Loadout>> = {
     r: { main: "warhammer", off: "towerShield" },
     p: { main: "spear", off: "roundShield" },
   },
-  b: {
+  sun: {
     k: { main: "royalMacuahuitl" },
     q: { main: "sunScepter" },
     b: { main: "serpentStaff" },
     n: { main: "macuahuitl", off: "chimalli" },
     r: { main: "stoneMaul", off: "greatChimalli" },
     p: { main: "tepoztopilli", off: "chimalli" },
+  },
+  // No shields anywhere except the battery's mantlet: the Grande Armée fights
+  // with sabre, musket and gun, and a shield would read as medieval.
+  empire: {
+    k: { main: "imperialSabre" },
+    q: { main: "eagleStaff" },
+    b: { main: "marshalBaton" },
+    n: { main: "cavalrySabre" },
+    r: { main: "artilleryRammer", off: "eagleShield" },
+    p: { main: "musketBayonet" },
   },
 };
 
@@ -766,9 +1009,10 @@ export interface AttachedArms {
 /**
  * Builds and parents the figure's arms.
  *
- * @param root   the (already posed) sculpt root — bone matrices must be current
- * @param unit   the figure's height in the root's own units
- * @param baseY  the sole line in the root's own units, so props clear the floor
+ * @param root    the (already posed) sculpt root — bone matrices must be current
+ * @param unit    the figure's height in the root's own units
+ * @param baseY   the sole line in the root's own units, so props clear the floor
+ * @param arsenal which army's weapon family to build from
  */
 export function attachWeapons(
   root: THREE.Object3D,
@@ -776,9 +1020,10 @@ export function attachWeapons(
   color: Faction,
   unit: number,
   baseY = 0,
+  arsenal: ArsenalId = "kingdom",
 ): AttachedArms {
   const arms: AttachedArms = { meshes: [], materials: [], baseEmissive: [], focus: null };
-  const loadout = LOADOUT[color][kind];
+  const loadout = LOADOUT[arsenal][kind];
 
   root.updateMatrixWorld(true);
   const rootInverse = root.matrixWorld.clone().invert();

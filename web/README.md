@@ -3,7 +3,7 @@
 This folder holds the game itself. For the project overview, features, architecture notes and
 contribution guide, read the [root README](../README.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-A cinematic 3D chess game: sculpted medieval and Mesoamerican figures fighting on a
+A cinematic 3D chess game: sculpted medieval, Mesoamerican and Napoleonic figures fighting on a
 marble-and-basalt board. Built with Vite + React + TypeScript + three.js, with chess.js for
 the rules and a Web Worker search engine for the computer opponent.
 
@@ -27,7 +27,7 @@ bun run preview
 | Camera & battleground | Camera icon in the top bar (presets, flip, tactical, the four arenas) |
 | What a button does | Hover, focus or tap it — every icon carries a tooltip |
 | Skip the intro | Click anywhere during the opening sweep |
-| Settings | Gear icon (graphics preset, capture cinematics, board swing, sound) |
+| Settings | Gear icon (armies, battleground, graphics preset, capture cinematics, board swing, sound) |
 
 There is no drag-and-drop; both selecting and moving resolve on pointer release, and a press
 that travels more than 8px counts as a camera swing instead.
@@ -92,7 +92,7 @@ src/
     MainMenu.tsx / MoveLedger.tsx / SettingsPanel.tsx / GameOverModal.tsx / Heraldry.tsx
     medieval.css       the whole overlay's look
   audio/             Web Audio mixer with layered score stems
-  assets/generated.ts  URLs of the generated models and audio
+  assets/generated.ts  army skins (sculpts, clips, arms, voices per civilisation) + audio URLs
 ```
 
 ### Move flow
@@ -146,10 +146,29 @@ A showcase duel adds a **clarity grade** on top of the preset (`Postfx.setClarit
 field, grain ×0.3, vignette ×0.5 and bloom ×0.62 at a higher threshold, because a duel that is
 watched rather than played needs the sculpts and the squares to read.
 
+## Armies
+
+Three army skins, chosen per side in **Settings → Armies** and remembered in `localStorage`
+under `kg.armies`:
+
+| Id | Army | Arms (`ArsenalId`) |
+| --- | --- | --- |
+| `ivory` | Ivory Kingdom — King, Queen, Mage, Knight, Guardian, Footman | `kingdom` |
+| `sun` | Sun Empire — Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | `sun` |
+| `empire` | Grande Armée — Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | `empire` |
+
+One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five clips per
+rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
+`SceneEngine.setArmySkins` runs the swap in the background: it waits for any move animation to
+finish, marks the factory stale and rebuilds (taking the old figures down before their shared
+geometry is freed), reloads the rosters, stands the new army up and repoints the mixer's voices.
+With the same skin on both sides only the skin's `native` faction keeps its painted textures;
+the other side falls through `applyFactionLook()` and is tinted into dark livery.
+
 ## Character animation
 
 Every figure is a rigged (skinned) character with up to five skeletal clips, listed per kind in
-`PIECE_ANIMATED_MODELS` (`src/assets/generated.ts`):
+its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 
 | Clip | When it plays |
 | --- | --- |
@@ -220,13 +239,18 @@ simultaneous bolt simply gets no light.
 
 ## Swapping in different character models
 
-The static fallback sculpts are referenced by URL in `src/assets/generated.ts`:
+The static fallback sculpts are the `still` roster of each army in `src/assets/generated.ts`:
 
 ```ts
-export const PIECE_MODEL_URLS: Record<PieceKind, string> = {
-  k: "…king.glb",
-  q: "…queen.glb",
-  /* … */
+export const ARMY_SKINS: Record<ArmySkinId, ArmySkin> = {
+  ivory: {
+    arsenal: "kingdom",
+    native: "w",
+    still: { k: "…king.glb", q: "…queen.glb", /* … */ },
+    animated: { /* rigged GLB + one GLB per clip */ },
+    cries: { /* one voice per rank */ },
+  },
+  /* sun, empire … */
 };
 ```
 
@@ -242,9 +266,10 @@ Drop higher-quality glTF/GLB characters into `public/models/` and point the entr
 If a rigged model fails to download the loader falls back to the static sculpt, and if that
 fails too, to a procedural primitive figure — the game always stays playable.
 
-To animate your own characters, add a `PIECE_ANIMATED_MODELS` entry with a rigged GLB plus a
-GLB per clip; any missing clip is simply skipped, and a clip whose download failed is retried on
-demand the next time the game needs it.
+To animate your own characters, fill that army's `animated` roster with a rigged GLB plus a GLB
+per clip; any missing clip is simply skipped, and a clip whose download failed is retried on
+demand the next time the game needs it. A new army is one `ARMY_SKINS` entry plus a `LOADOUT`
+row in `weapons.ts` — the settings panel renders `ARMY_SKIN_ORDER`, so it appears on its own.
 
 For shipping, compress the GLBs instead of streaming them from a remote host:
 

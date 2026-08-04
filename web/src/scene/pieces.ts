@@ -3,9 +3,12 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import {
-  PIECE_ANIMATED_MODELS,
+  ARMY_SKINS,
+  DEFAULT_ARMY_SKINS,
   PIECE_MODEL_ORIENTATION,
-  PIECE_MODEL_URLS,
+  type ArmySkin,
+  type ArmySkinId,
+  type ArsenalId,
   type PieceAnimationSet,
 } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
@@ -226,6 +229,8 @@ interface Template {
    * painted textures; shared sculpts are re-tinted into faction livery instead.
    */
   ownLivery: boolean;
+  /** Weapon family the figure is armed from. */
+  arsenal: ArsenalId;
 }
 
 export interface PieceVisualOptions {
@@ -341,6 +346,7 @@ export class PieceView {
     unit = 1,
     baseY = 0,
     ownLivery = false,
+    arsenal: ArsenalId = "kingdom",
   ) {
     this.kind = kind;
     this.color = color;
@@ -419,7 +425,7 @@ export class PieceView {
     this.buildBadge();
 
     this.setupAnimations(model, clips, options.idleAnimation !== false);
-    this.equipArms(model, unit, baseY);
+    this.equipArms(model, unit, baseY, arsenal);
   }
 
   /** Crest sprite, parked just above the figure's crown. */
@@ -547,10 +553,10 @@ export class PieceView {
    * Hands the figure its weapon once the stance pose is settled, so the prop is
    * aligned against the pose the player actually sees.
    */
-  private equipArms(model: THREE.Object3D, unit: number, baseY: number): void {
+  private equipArms(model: THREE.Object3D, unit: number, baseY: number, arsenal: ArsenalId): void {
     try {
       this.mixer?.update(0);
-      const arms = attachWeapons(model, this.kind, this.color, unit, baseY);
+      const arms = attachWeapons(model, this.kind, this.color, unit, baseY, arsenal);
       this.arms = arms;
       for (const mesh of arms.meshes) mesh.userData.piece = this;
       // Props hang off bones, so they burn on the same clock but without the
@@ -1234,15 +1240,17 @@ async function loadGltf(loader: GLTFLoader, url: string, attempts = 4): Promise<
  * Loads every generated sculpt once, normalises each to its board height and
  * hands out cheap clones.
  *
- * The two armies are different civilisations, so each faction has its own six
- * sculpts. A faction with no roster of its own (or one whose download fails)
- * falls back to the other army's sculpt, then to a procedural figure — the
- * board always fills, whatever the network does.
+ * Each side musters an army *skin* — a whole civilisation with its own six
+ * sculpts, clips, arms and voices. A kind the chosen skin does not carry (or
+ * one whose download fails) falls back to the other side's sculpt and then to a
+ * procedural figure, so the board always fills whatever the network does.
  */
 export class PieceFactory {
   private templates = new Map<TemplateKey, Template>();
   private loader = new GLTFLoader();
   private loaded = false;
+  /** Which army each side is currently mustering. */
+  private skins: Record<Faction, ArmySkinId> = { ...DEFAULT_ARMY_SKINS };
   /** Clip URLs per roster, so a clip can still be fetched long after start-up. */
   private clipSources = new Map<TemplateKey, PieceAnimationSet>();
   /** In-flight clip downloads, keyed by URL, so nothing is fetched twice. */
@@ -1259,14 +1267,54 @@ export class PieceFactory {
     this.clipListener = listener;
   }
 
+  /** The army each side is mustering. */
+  getSkins(): Record<Faction, ArmySkinId> {
+    return { ...this.skins };
+  }
+
+  /**
+   * Records the armies to muster.
+   *
+   * @returns whether anything changed, i.e. whether {@link reload} is needed
+   */
+  setSkins(next: Record<Faction, ArmySkinId>): boolean {
+    if (next.w === this.skins.w && next.b === this.skins.b) return false;
+    this.skins = { w: next.w, b: next.b };
+    return true;
+  }
+
+  /**
+   * Marks the sculpts stale without disposing anything, so the scene can take
+   * its figures down *before* {@link reload} frees the geometry they clone.
+   */
+  markStale(): void {
+    this.loaded = false;
+  }
+
+  /** Drops the current armies and loads the ones {@link setSkins} asked for. */
+  async reload(onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    this.disposeTemplates();
+    this.clipJobs.clear();
+    this.clipSources.clear();
+    this.warming = null;
+    await this.load(onProgress);
+  }
+
   async load(onProgress?: (loaded: number, total: number) => void): Promise<void> {
-    const kinds = Object.keys(PIECE_MODEL_URLS.w) as PieceKind[];
-    const factions: Faction[] = ["w", "b"];
+    const kinds: PieceKind[] = ["k", "q", "b", "n", "r", "p"];
+    // The side whose skin is loaded first keeps its own painted textures; when
+    // both sides wear the same army the other one is re-tinted into livery, so
+    // the two forces never become impossible to tell apart.
+    const shared = this.skins.w === this.skins.b;
+    const primary = shared ? ARMY_SKINS[this.skins.w].native : "w";
+    const factions: Faction[] = primary === "b" ? ["b", "w"] : ["w", "b"];
     const jobs: { faction: Faction; kind: PieceKind }[] = [];
     for (const faction of factions) {
+      if (shared && faction !== primary) continue;
+      const skin = ARMY_SKINS[this.skins[faction]];
       for (const kind of kinds) {
-        // Only load a second roster where the faction really owns a sculpt.
-        if (faction === "b" && !PIECE_MODEL_URLS.b[kind]) continue;
+        // Only load a roster where this army really carries a sculpt.
+        if (!skin.animated[kind] && !skin.still[kind]) continue;
         jobs.push({ faction, kind });
       }
     }
@@ -1285,13 +1333,19 @@ export class PieceFactory {
       }),
     );
 
-    // Anything still missing borrows the other army's figure.
+    // Anything still missing borrows the other side's figure.
     for (const kind of kinds) {
       for (const faction of factions) {
         if (this.templates.has(`${faction}${kind}`)) continue;
         const other = this.templates.get(`${faction === "w" ? "b" : "w"}${kind}`);
-        if (other) this.templates.set(`${faction}${kind}`, { ...other, ownLivery: false });
-        else this.templates.set(`${faction}${kind}`, this.normalize(buildProceduralFigure(kind), kind, {}, false));
+        const arsenal = ARMY_SKINS[this.skins[faction]].arsenal;
+        if (other) this.templates.set(`${faction}${kind}`, { ...other, ownLivery: false, arsenal: other.arsenal });
+        else {
+          this.templates.set(
+            `${faction}${kind}`,
+            this.normalize(buildProceduralFigure(kind), kind, {}, false, arsenal),
+          );
+        }
       }
     }
     this.loaded = true;
@@ -1299,11 +1353,12 @@ export class PieceFactory {
 
   /** Rigged sculpt when the army has one, else its static GLB. */
   private async loadRoster(faction: Faction, kind: PieceKind): Promise<Template> {
-    const animated = PIECE_ANIMATED_MODELS[faction][kind];
-    const still = PIECE_MODEL_URLS[faction][kind];
+    const skin: ArmySkin = ARMY_SKINS[this.skins[faction]];
+    const animated = skin.animated[kind];
+    const still = skin.still[kind];
     if (animated) {
       try {
-        const template = await this.loadAnimated(kind, animated);
+        const template = await this.loadAnimated(kind, animated, skin.arsenal);
         // Remembered so the clips left for later can still be found by name.
         this.clipSources.set(`${faction}${kind}`, animated);
         return template;
@@ -1313,14 +1368,14 @@ export class PieceFactory {
     }
     if (!still) throw new Error(`no sculpt url for ${faction}${kind}`);
     const gltf = await loadGltf(this.loader, still);
-    return this.normalize(gltf.scene, kind, {}, true);
+    return this.normalize(gltf.scene, kind, {}, true, skin.arsenal);
   }
 
   /**
    * Rigged sculpt + the clips the opening needs. The clips share the auto-rig
    * skeleton, so they bind straight onto the rigged scene — no retargeting.
    */
-  private async loadAnimated(kind: PieceKind, set: PieceAnimationSet): Promise<Template> {
+  private async loadAnimated(kind: PieceKind, set: PieceAnimationSet, arsenal: ArsenalId): Promise<Template> {
     const rigged = await loadGltf(this.loader, set.rigged, 5);
     const clips: PieceClips = {};
     await Promise.all(
@@ -1331,7 +1386,7 @@ export class PieceFactory {
         if (clip) clips[name] = clip;
       }),
     );
-    return this.normalize(rigged.scene, kind, clips, true);
+    return this.normalize(rigged.scene, kind, clips, true, arsenal);
   }
 
   /** One clip GLB — queued, retried, and never allowed to throw at the caller. */
@@ -1438,6 +1493,7 @@ export class PieceFactory {
     kind: PieceKind,
     clips: PieceClips,
     ownLivery: boolean,
+    arsenal: ArsenalId,
   ): Template {
     const box = measureModel(scene);
     const size = new THREE.Vector3();
@@ -1454,7 +1510,7 @@ export class PieceFactory {
       if ((node as THREE.SkinnedMesh).isSkinnedMesh) skinned = true;
     });
 
-    return { scene, scale, offset, skinned, clips, unit: height, baseY: box.min.y, ownLivery };
+    return { scene, scale, offset, skinned, clips, unit: height, baseY: box.min.y, ownLivery, arsenal };
   }
 
   create(kind: PieceKind, color: Faction, options: PieceVisualOptions): PieceView {
@@ -1475,6 +1531,7 @@ export class PieceFactory {
       template.unit,
       template.baseY,
       template.ownLivery,
+      template.arsenal,
     );
     view.setFacing(new THREE.Vector3(0, 0, color === "w" ? -1 : 1));
     return view;
@@ -1484,7 +1541,20 @@ export class PieceFactory {
     this.clipListener = null;
     this.clipJobs.clear();
     this.clipSources.clear();
+    this.disposeTemplates();
+  }
+
+  /**
+   * Frees the sculpts. Clones share their template's geometry, so every live
+   * figure must be gone before this runs (see {@link markStale}).
+   */
+  private disposeTemplates(): void {
+    this.loaded = false;
+    const seen = new Set<THREE.Object3D>();
     for (const template of this.templates.values()) {
+      // Both sides may render the same sculpt; free it once.
+      if (seen.has(template.scene)) continue;
+      seen.add(template.scene);
       template.scene.traverse((node) => {
         const mesh = node as THREE.Mesh;
         if (!mesh.isMesh) return;

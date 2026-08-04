@@ -1,8 +1,9 @@
 # King's Gambit — Medieval 3D Chess
 
-A cinematic 3D chess game in the browser. Two rival civilisations — a medieval European
-**Ivory Kingdom** and a Mesoamerican **Sun Empire** — face each other as sculpted, rigged
-characters that glide, strike, scream and burn away into dust on a marble-and-basalt board.
+A cinematic 3D chess game in the browser. Rival civilisations — a medieval European
+**Ivory Kingdom**, a Mesoamerican **Sun Empire** and Napoleonic France's **Grande Armée** —
+face each other as sculpted, rigged characters that march, strike, scream and burn away into
+dust on a marble-and-basalt board. Either side can muster any of the three armies.
 
 Built with **Vite + React 19 + TypeScript + three.js**, [chess.js](https://github.com/jhlywa/chess.js)
 for the rules, and a **Web Worker** search engine for the computer opponent. No backend, no
@@ -21,6 +22,7 @@ cd web && bun install && bun run dev
 - [Controls](#controls)
 - [Interface](#interface)
 - [Game modes](#game-modes)
+- [Armies](#armies)
 - [Battlegrounds](#battlegrounds)
 - [Project structure](#project-structure)
 - [Architecture](#architecture)
@@ -40,9 +42,12 @@ cd web && bun install && bun run dev
 
 - **Full chess rules** — castling, en passant, promotion, check, checkmate, stalemate,
   threefold repetition, the fifty-move rule and insufficient material, all via chess.js.
-- **Rigged 3D characters, not chess pieces** — twelve sculpts (six per army), each with
+- **Rigged 3D characters, not chess pieces** — eighteen sculpts (six per army), each with
   `idle`, `walk`, `attack` and `death` skeletal clips, plus weapons, shields and a floating
   rank crest.
+- **Three army skins, chosen per side** — Ivory Kingdom, Sun Empire or the Grande Armée, each
+  with its own six sculpts, clips, weapon family and voices. Swap either side at any time in
+  **Settings → Armies**; the choice is remembered between visits.
 - **Figures march, they do not slide** — a moved piece turns to face its destination, walks
   the distance on its own legs at the cadence of its rank, and squares up again on arrival.
   Knights keep the leap, running through the air and landing on both feet.
@@ -113,7 +118,7 @@ Cloudflare Pages or any static host. No environment variables are required to ru
 | Camera & battleground | Camera icon in the top bar — Ivory / Obsidian / Overhead / Cinematic, flip, tactical, and the four arenas |
 | What a button does | Hover or focus it (tap it on touch) — every icon carries a tooltip |
 | Skip the intro | Click anywhere during the opening sweep |
-| Settings | Gear icon — battleground, graphics preset, capture cinematics, board swing, sound |
+| Settings | Gear icon — armies, battleground, graphics preset, capture cinematics, board swing, sound |
 
 There is no drag-and-drop: a press that travels more than 8px is read as a camera swing, so
 orbiting from a figure never moves it. Selection and moves both resolve on release.
@@ -164,6 +169,31 @@ The board owns the screen; every panel is either short, in a corner, or foldable
 | **Attract** | Leave the menu alone for 30 seconds and a showcase duel starts behind it |
 
 Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.
+
+## Armies
+
+Each side picks its army independently in **Settings → Armies** (near side / far side). An army
+skin is a whole civilisation: six sculpts, their skeletal clips, a procedural weapon family and
+a set of death cries.
+
+| Id | Army | King → pawn | Arms |
+| --- | --- | --- | --- |
+| `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
+| `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Dress and cavalry sabres, eagle staff of command, marshal's baton, gun rammer, eagle mantlet, musket with fixed bayonet |
+
+The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
+breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
+bicorne and dress sabre, the commander's laurel crown and eagle staff, the marshal's plumed hat
+and coat tails, the cuirassier's horsehair-crested helmet over a steel breastplate, the
+artillery guard's bearskin and eagle mantlet, and the infantry's musket — the longest
+silhouette on the board. The two casting ranks keep their range: the commander signals the
+volley from her own square, the marshal orders it with his baton.
+
+Swapping an army re-downloads its rosters, so the swap waits for any fight on screen to finish,
+takes the old figures down and stands the new ones up (a second or two on a cold cache). Give
+**both** sides the same army and the far side is re-tinted into dark livery, so the two forces
+never become impossible to tell apart.
 
 ## Battlegrounds
 
@@ -217,11 +247,11 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── Hud.tsx             top bar, spoils, chronicle sigil, showcase rail
         │   ├── Tooltip.tsx         themed tooltip for the icon-only controls
         │   ├── MoveLedger.tsx      the chronicle: move list, PGN, hover preview
-        │   ├── SettingsPanel.tsx   graphics, arena, cinematics, sound
+        │   ├── SettingsPanel.tsx   armies, arena, graphics, cinematics, sound
         │   ├── Heraldry.tsx        crests, hourglasses, piece glyphs
         │   └── medieval.css        the whole overlay's look
         ├── audio/          Web Audio mixer with layered score stems
-        ├── assets/         URLs of the generated models and audio
+        ├── assets/         army skins: model / clip / voice URLs per civilisation
         └── components/ui/  shadcn/ui primitives
 ```
 
@@ -303,7 +333,7 @@ printed to the console (`[scene] gpu: …`) and shown under the graphics presets
 ## Character animation
 
 Every figure is a rigged (skinned) character with up to five skeletal clips, declared per rank
-in `PIECE_ANIMATED_MODELS` (`src/assets/generated.ts`):
+in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 
 | Clip | When it plays |
 | --- | --- |
@@ -417,14 +447,25 @@ a glowing burn edge, while the whole mesh fades and sheds upward-drifting motes.
 
 ## Swapping in your own models
 
-The sculpts are referenced by URL in `src/assets/generated.ts`:
+Every army is one entry in `ARMY_SKINS` (`src/assets/generated.ts`) — label, blurb, rank names,
+weapon family, sculpt URLs, clip URLs and voices:
 
 ```ts
-export const PIECE_MODEL_URLS: Record<Faction, Roster<string>> = {
-  w: { k: "…king.glb", q: "…queen.glb", /* … */ },
-  b: { /* … */ },
+export const ARMY_SKINS: Record<ArmySkinId, ArmySkin> = {
+  ivory: {
+    label: "Ivory Kingdom",
+    arsenal: "kingdom",   // weapon family in src/scene/weapons.ts
+    native: "w",          // the side it was painted for
+    still: { k: "…king.glb", q: "…queen.glb", /* … */ },
+    animated: { /* rigged GLB + one GLB per clip, per rank */ },
+    cries: { /* one voice per rank */ },
+  },
+  /* sun, empire … */
 };
 ```
+
+A fourth army is that one entry plus a `LOADOUT` row in `src/scene/weapons.ts`; it then shows up
+in **Settings → Armies** on its own (the panel renders `ARMY_SKIN_ORDER`).
 
 Drop glTF/GLB characters into `web/public/models/` and point the entries at
 `/models/your-king.glb`. Requirements:
@@ -438,7 +479,7 @@ Drop glTF/GLB characters into `web/public/models/` and point the entries at
 If a rigged model fails to download the loader falls back to the static sculpt, and if that
 fails too, to a procedural primitive figure — **the game always stays playable**.
 
-To animate your own characters, add a `PIECE_ANIMATED_MODELS` entry with a rigged GLB plus one
+To animate your own characters, fill the army's `animated` roster with a rigged GLB plus one
 GLB per clip; any missing clip is simply skipped (no `walk` clip just means that rank slides),
 and a clip that fails to download is retried on demand the next time the game needs it.
 
@@ -453,9 +494,11 @@ bunx @gltf-transform/cli optimize king.glb public/models/king.glb \
 
 MP3s are streamed once and decoded into Web Audio buffers: an ambience bed, a score bed and a
 tension stem that crossfades in during check and the endgame, plus place, capture, check-horn
-and fanfare one-shots. The twelve death cries in `DEATH_CRY_URLS` are lazily loaded after the
-mixer unlocks, since they are only needed on a capture; each is a real one-second take, panned
-by the dying figure's screen position and pitch-jittered per playback.
+and fanfare one-shots. Death cries come from whichever army each side is mustering (`cries` on
+its `ARMY_SKINS` entry) and are lazily loaded after the mixer unlocks, since they are only
+needed on a capture; each is a real one-second take, panned by the dying figure's screen
+position and pitch-jittered per playback. They are cached by URL, so switching armies back and
+forth costs nothing.
 
 Footsteps, the wooden set-down knock, body falls and UI blips are synthesised with oscillators
 and noise buffers — no files. Everything routes through one master gain
