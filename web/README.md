@@ -177,7 +177,9 @@ under `kg.armies`:
 | `empire` | Grande Armée — Napoléon, Imperial Commander (flintlock + Marengo sword), Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` |
 
 One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five or six
-clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
+clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and its own six death
+cries (`DEATH_CRIES`) — no skin borrows another's voices, and the Grande Armée's are gunshot
+reactions (punched-out air, then the voice) rather than melee cries.
 `SceneEngine.setArmySkins` runs the swap in the background: it waits for any move animation to
 finish, marks the factory stale and rebuilds (taking the old figures down before their shared
 geometry is freed), reloads the rosters, stands the new army up and repoints the mixer's voices.

@@ -327,8 +327,9 @@ const CRY_BASE = "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd"
 /**
  * One death cry per figure per army. They are voiced in character — the ivory
  * kingdom dies like medieval Europeans, the Sun Empire like jaguar/eagle
- * warriors — so the ear can tell what just fell without looking at the board.
- * The two queens are the exception: soft breathy sighs instead of shrieks.
+ * warriors, the Grande Armée like men who have just been shot — so the ear can
+ * tell what just fell, and which army it belonged to, without looking at the
+ * board. The queens are the exception: breathy sighs and gasps, not shrieks.
  * Every clip is generated at a true one-second length, so the mixer plays them
  * back at their natural pitch instead of speeding a longer take up.
  * Loaded lazily after the mixer unlocks (they are only needed on a capture).
@@ -352,15 +353,26 @@ const DEATH_CRIES: Record<ArmySkinId, Record<PieceKind, string>> = {
     // Deep male voice — a rising shout cut short by the death gasp.
     p: `${CRY_BASE}/ffa27c35-53ff-4f3a-a71e-285aff8a2a4b.mp3`,
   },
-  // The Grande Armée borrows the European voices: same language of pain, and
-  // the queen's breathy sigh already fits an imperial commander.
+  // The Grande Armée dies its own death. Where the ivory kingdom roars and the
+  // Sun Empire shrieks, a powder army takes the ball and goes quiet fast: these
+  // are all impact reactions — the air punched out first, the voice second.
   empire: {
-    k: `${CRY_BASE}/c4d801f3-b8e7-42bb-b046-6b21e9ec40a5.mp3`,
-    q: `${CRY_BASE}/e01a2d0f-2b13-426b-89b4-d40e67d4b16f.mp3`,
-    b: `${CRY_BASE}/4ca6a216-52fc-4882-b51a-9a44d188edac.mp3`,
-    n: `${CRY_BASE}/ebb33bba-cf2b-481f-aec6-4465a6a35253.mp3`,
-    r: `${CRY_BASE}/f9d84835-112f-46de-951b-052f867814da.mp3`,
-    p: `${CRY_BASE}/e4caca0d-8f61-4228-b349-025ae499cde5.mp3`,
+    // Napoléon: a commanding grunt of shock bitten off through clenched teeth.
+    // He does not scream; the coat closes on it.
+    k: `${CRY_BASE}/dd0626e5-1b47-4d72-800b-503ae732f16d.mp3`,
+    // Imperial Commander: sharp indrawn breath, then a low pained gasp fading —
+    // held together rather than shrieked, unlike the two sorceress queens.
+    q: `${CRY_BASE}/bbae4ca6-bb5c-46b5-be77-b2a4e6bfc890.mp3`,
+    // Marshal-Tirailleur: hit on the knee he fires from — a clipped grunt and a
+    // rasp low to the ground.
+    b: `${CRY_BASE}/203b9d42-08e3-43e5-96e3-9c7653f419db.mp3`,
+    // Cuirassier: a furious bellow boxed in by the steel helmet, ending wet.
+    n: `${CRY_BASE}/f2391f92-4656-4dd2-bb62-8975ca2926a8.mp3`,
+    // Artillery Guard: the heaviest man on the board — a deep winded groan
+    // sagging in pitch as the weight goes down.
+    r: `${CRY_BASE}/1dc52c19-e964-4089-a111-d0b1122b4198.mp3`,
+    // Line Infantry: young, thin, panicked — a rising cry snapped short.
+    p: `${CRY_BASE}/d32a7184-f41f-4ad9-a61b-a4dc386648e2.mp3`,
   },
 };
 

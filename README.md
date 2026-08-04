@@ -70,8 +70,11 @@ cd web && bun install && bun run dev
   away do they walk the whole distance and take the square. The mage throws **one** bolt; the
   sorceress throws a **volley of three** and leaves a ring of fire burning on the square (cold
   witchfire for the Kingdom, sunfire for the Empire).
-- **Twelve death cries** — one recorded voice per rank per army, panned to where the body is
-  on screen, ducking the music for a beat and pitch-jittered so no two deaths sound alike.
+- **Eighteen death cries** — one recorded voice per rank per army, panned to where the body is
+  on screen, ducking the music for a beat and pitch-jittered so no two deaths sound alike. Each
+  army dies in its own language of pain: the Ivory Kingdom roars and groans, the Sun Empire
+  shrieks and hisses, and the Grande Armée — being shot rather than struck — has the air punched
+  out of it first and the voice second.
 - **Four battlegrounds** that relight the whole world — sky, haze, stone colour, tile
   contrast, fires, birds, siege engines and the film grade.
 - **2D tactical view** — one key lifts the camera straight overhead and flattens every figure
@@ -671,6 +674,13 @@ its `ARMY_SKINS` entry) and are lazily loaded after the mixer unlocks, since the
 needed on a capture; each is a real one-second take, panned by the dying figure's screen
 position and pitch-jittered per playback. They are cached by URL, so switching armies back and
 forth costs nothing.
+
+All three armies have their own set of six, and the sets are written against the way that army
+dies. The Grande Armée's are gunshot reactions rather than melee cries — Napoléon bites a grunt
+off through his teeth, the commander takes a sharp breath and lets a low gasp fall away, the
+marshal is hit on the knee he fires from, the cuirassier's bellow is boxed in by his helmet, the
+artillery guard's groan sags with his weight, and the line infantryman's cry is young, thin and
+snapped short.
 
 Footsteps, the wooden set-down knock, body falls and UI blips are synthesised with oscillators
 and noise buffers — no files. Everything routes through one master gain
