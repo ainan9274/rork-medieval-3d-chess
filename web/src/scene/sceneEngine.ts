@@ -436,6 +436,24 @@ interface GunProfile {
   smokeDensity: number;
   /** Fine-grain powder: paler, threadier puffs that lift and tear apart fast. */
   fineSmoke: boolean;
+  /**
+   * Seconds from the hammer falling to the last thread of the bank dissolving.
+   *
+   * Powder smoke is the slowest thing a gun produces — the flash is three frames
+   * and the ball is half a second, but the cloud is still drifting over the
+   * square long after both. This used to be derived from the calibre and then
+   * *shortened* for a rifled barrel, which had the marksman's shot clearing the
+   * air almost before the body fell. It is now stated per barrel, and every one
+   * of them outlives its own shot.
+   */
+  smokeHang: number;
+  /**
+   * Seconds the bore keeps trickling smoke after the shot, and how many wisps
+   * come out of it. Unlike the bank — which is made once and left hanging in
+   * the air where it was fired — this is emitted at the *live* muzzle, so it
+   * follows the barrel as the man lowers his weapon. 0 for none.
+   */
+  boreSmoke: { seconds: number; wisps: number };
   /** Scales the hit at the far end: flash, sparks, tile strike and shake. */
   blast: number;
   /** How far the body is thrown back by the shot, in tiles. */
@@ -471,10 +489,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ammo: "pistolBall",
     ball: 0.055,
     speed: 0.1,
-    smoke: 4,
+    smoke: 5,
     smokeTint: null,
     smokeDensity: 0.85,
     fineSmoke: false,
+    smokeHang: 1.7,
+    boreSmoke: { seconds: 0.7, wisps: 3 },
     blast: 1.1,
     kick: 0.05,
     recoil: 0,
@@ -496,10 +516,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ammo: "musketBall",
     ball: 0.078,
     speed: 0.108,
-    smoke: 6,
+    smoke: 8,
     smokeTint: null,
     smokeDensity: 1,
     fineSmoke: false,
+    smokeHang: 2.5,
+    boreSmoke: { seconds: 1, wisps: 4 },
     blast: 1,
     kick: 0.07,
     recoil: 0,
@@ -522,10 +544,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // The one round on the board heavy enough to watch travel on its own merits.
     ball: 0.17,
     speed: 0.125,
-    smoke: 11,
+    smoke: 14,
     smokeTint: null,
     smokeDensity: 1.15,
     fineSmoke: false,
+    smokeHang: 3.8,
+    boreSmoke: { seconds: 1.6, wisps: 6 },
     blast: 2.1,
     kick: 0.04,
     recoil: 0.19,
@@ -563,10 +587,17 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.05,
     // Flattest and fastest thing fired in the hall, as rifling should be.
     speed: 0.082,
-    smoke: 6,
+    // The marksman's signature. A rifled charge makes far less smoke than the
+    // line's musket, so the answer is never to make it *thicker* — it is to make
+    // more of it, thinner, and let it stand in the air long enough to watch it
+    // come apart. Pale ash grey, sheer enough to read the board through, and the
+    // bore goes on smoking in his hands for a beat and a half after the crack.
+    smoke: 12,
     smokeTint: 0xdfe4ea,
-    smokeDensity: 0.62,
+    smokeDensity: 0.74,
     fineSmoke: true,
+    smokeHang: 3.2,
+    boreSmoke: { seconds: 1.5, wisps: 6 },
     blast: 1.2,
     kick: 0.06,
     recoil: 0,
@@ -588,10 +619,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ammo: "pistolBall",
     ball: 0.058,
     speed: 0.096,
-    smoke: 5,
+    smoke: 6,
     smokeTint: null,
     smokeDensity: 0.9,
     fineSmoke: false,
+    smokeHang: 1.9,
+    boreSmoke: { seconds: 0.8, wisps: 3 },
     blast: 1.25,
     kick: 0.055,
     recoil: 0,
@@ -610,10 +643,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ammo: "musketBall",
     ball: 0.072,
     speed: 0.106,
-    smoke: 5,
+    smoke: 6,
     smokeTint: null,
     smokeDensity: 1,
     fineSmoke: false,
+    smokeHang: 2.1,
+    boreSmoke: { seconds: 0.8, wisps: 4 },
     blast: 1,
     kick: 0.06,
     recoil: 0,
@@ -635,6 +670,16 @@ const GUNS: Record<PieceKind, GunProfile> = {
 function muzzleFlare(gun: GunProfile): number {
   return gun.ball * AMMUNITION[gun.ammo].gauge * gun.flare;
 }
+
+/**
+ * The hall's own air, in world units per second.
+ *
+ * Barely a breath — a couple of centimetres a second — but it is what turns a
+ * powder bank from a cloud that dims where it was made into one that is *carried
+ * off the square*. Every gun on the board shares it, so smoke from both armies
+ * drifts the same way and the board reads as one room.
+ */
+const HALL_DRAFT = new THREE.Vector3(0.075, 0.012, -0.045);
 
 /**
  * A marching distance profile: a short push-off, a long stretch at constant
@@ -2088,12 +2133,19 @@ export class SceneEngine {
       look,
       size: 0.34 + gun.calibre * 0.7,
       direction: aim,
-      count: Math.max(3, Math.round(gun.smoke * (settings.captureParticles >= 34 ? 1 : 0.5))),
-      life: (1.2 + gun.calibre * 1.1) * (gun.fineSmoke ? 0.66 : 1),
+      count: Math.max(3, Math.round(gun.smoke * (settings.captureParticles >= 34 ? 1 : 0.55))),
+      life: gun.smokeHang,
       tint: powder,
       density: gun.smokeDensity,
       fine: gun.fineSmoke,
+      // Carried off the square by the hall's air and rolled out along the stone
+      // rather than sinking through it.
+      draft: HALL_DRAFT,
+      floor: BOARD_TOP + 0.05,
     });
+    // The bore goes on smoking in his hands after the crack — emitted at the live
+    // muzzle, so it stays with the barrel as the weapon comes down.
+    this.boreTrickle(attacker, gun, powder);
     // Sparks and burning grains thrown out of the pan and the bore. Sized off the
     // flame rather than off a constant, so the grains stay in scale with it: a
     // field gun throws visible embers, a pistol lock throws a pinch of them.
@@ -2278,6 +2330,53 @@ export class SceneEngine {
     this.focusPiece(attacker, 0.94);
     await this.glide(attacker, from, to, false, 1.1);
     audio.play("place", 0.5);
+  }
+
+  /**
+   * The barrel still smoking after the shot.
+   *
+   * The powder bank is made once, at the point the gun was fired, and left in
+   * the air — which is right, because air does not follow a man around. But a
+   * fouled bore keeps venting for a second or two afterwards, and *that* smoke
+   * belongs to the weapon: it has to come out of the muzzle wherever the muzzle
+   * has got to. So the wisps are emitted on a clock, each one reading
+   * {@link PieceView.muzzleOrigin} at the moment it is made, and the thread of
+   * smoke visibly trails the barrel as the marksman brings his rifle down out of
+   * the kneel.
+   *
+   * Each wisp is thinner and slower than the last: the bore is cooling.
+   */
+  private boreTrickle(attacker: PieceView, gun: GunProfile, tint: number): void {
+    const settings = QUALITY_SETTINGS[this.preset];
+    // The lowest preset has no budget for smoke that is not part of the kill.
+    if (settings.captureParticles < 34 || gun.boreSmoke.wisps <= 0) return;
+    const { seconds, wisps } = gun.boreSmoke;
+    const width = 0.1 + gun.calibre * 0.18;
+    let next = 0;
+    void this.tweens.to({
+      duration: seconds,
+      easing: (t: number) => t,
+      onUpdate: (t: number) => {
+        if (t < next) return;
+        next += 1 / wisps;
+        // 0 on the frame after the shot, 1 as the bore goes cold.
+        const cooling = Math.min(1, t);
+        this.effects.spawnSmoke(attacker.muzzleOrigin(), {
+          count: 1,
+          radius: width * 0.5,
+          scale: width * (0.7 + cooling * 0.75),
+          growth: 2.9,
+          // The last threads hang around longest — they have the least to lose.
+          life: (gun.fineSmoke ? 0.85 : 1.1) * (0.8 + cooling * 0.7),
+          // Barely pushed: this is leaking out of the bore, not being blown out.
+          speed: 0.16 * (1 - cooling * 0.5),
+          rise: (gun.fineSmoke ? 0.34 : 0.24) * (1 - cooling * 0.3),
+          color: tint,
+          opacity: (gun.fineSmoke ? 0.2 : 0.28) * (1 - cooling * 0.55),
+          drift: HALL_DRAFT,
+        });
+      },
+    });
   }
 
   /**

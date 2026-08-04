@@ -702,6 +702,7 @@ export interface PowderCloudOptions {
   direction: THREE.Vector3;
   /** How many puffs make up the bank. */
   count: number;
+  /** Seconds from ignition to the last thread of it dissolving. */
   life?: number;
   /**
    * Overrides the faction tint. A rifled bore burns a small, tight-patched
@@ -712,17 +713,79 @@ export interface PowderCloudOptions {
   /** How thick the bank reads. 1 = a musket; below that you see through it. */
   density?: number;
   /**
-   * Fine-grain powder: swaps in the paler, threadier map, keeps the bank tight
-   * to the barrel line, lifts it faster and tears it apart sooner.
+   * Fine-grain powder: swaps in the paler, threadier map, vents in a shorter
+   * sharper beat, lifts faster and tears itself apart sooner.
    */
   fine?: boolean;
+  /**
+   * The hall's own air, in world units per second. What finally carries the
+   * bank off the square it was fired from — without it the smoke would sit
+   * exactly where it was made and simply dim, which never reads as air.
+   */
+  draft?: THREE.Vector3;
+  /**
+   * World height the bank rolls out along instead of sinking through, i.e. the
+   * top of the board. Smoke that reaches it stops falling and spreads.
+   */
+  floor?: number;
 }
 
 /**
- * The bank of smoke a black-powder charge leaves hanging in front of the gun:
- * a handful of puffs shoved out along the barrel line, spreading, rising and
- * thinning. This is the signature of the whole army — the hall should be dirty
- * with it a second after a volley.
+ * One lobe of the bank, with the whole of its own history in it: when it left
+ * the bore, how hard, how long it has to live, and how it churns while it does.
+ *
+ * Every lobe is integrated from its *absolute age* rather than stepped frame by
+ * frame. That is deliberate: the bank is driven off a tween's normalised clock,
+ * so a closed-form path is the only way the smoke stays identical whatever the
+ * frame rate, and it lets each lobe be born and die on its own schedule inside
+ * one shared timeline.
+ */
+interface PowderPuff {
+  sprite: THREE.Sprite;
+  material: THREE.SpriteMaterial;
+  /** Offset from the bore the lobe is made at. */
+  seat: THREE.Vector3;
+  /** Speed it leaves the bore at, before drag takes it. */
+  jet: THREE.Vector3;
+  /** How fast that ejection speed is eaten by the air. */
+  drag: number;
+  /** Seconds after ignition this lobe appears. */
+  born: number;
+  /** Seconds it lasts once it has. */
+  span: number;
+  /** Width at birth, and how many times that it swells to. */
+  seed: number;
+  swell: number;
+  /** Upward pull of hot, light gas. */
+  lift: number;
+  /** Amplitude and rate of the curl it turns over as it goes. */
+  churn: THREE.Vector3;
+  rate: number;
+  phase: number;
+  spin: number;
+  peak: number;
+}
+
+/**
+ * The bank of smoke a black-powder charge leaves hanging in front of the gun.
+ *
+ * The old version was a handful of sprites that all appeared on the same frame,
+ * slid outward in a straight line at constant speed and dimmed together — one
+ * pop, then nothing. What a charge actually does has three distinct phases, and
+ * all three are modelled here:
+ *
+ * 1. **The vent.** Gas leaves the bore for a tenth of a second or so, not all at
+ *    once, so the lobes are *born in sequence* across `vent` and the earliest
+ *    ones get the hardest shove. This is what makes the bank grow out of the
+ *    barrel instead of appearing around it.
+ * 2. **The stall.** That ejection speed is eaten by the air almost immediately:
+ *    each lobe travels `jet/drag · (1 − e^⁻ᵈʳᵃᵍ·ᵃᵍᵉ)`, i.e. it lunges forward
+ *    perhaps a square and stops. From there it is only buoyancy, the hall's
+ *    draft and its own churn — a cloud, not a projectile.
+ * 3. **The dissolve.** Mass is conserved while volume is not: as a lobe swells
+ *    it must thin, so opacity carries `(seed/width)^1.35` on top of its fade.
+ *    Smoke therefore gets faint *because it is spreading*, which is why it goes
+ *    from solid white to a haze you can read the board through.
  */
 export async function spawnPowderCloud(
   scene: THREE.Object3D,
@@ -734,14 +797,25 @@ export async function spawnPowderCloud(
   const fine = options.fine === true;
   const tint = options.tint ?? options.look.smoke;
   const density = options.density ?? 1;
+  const size = options.size;
   const group = new THREE.Group();
   group.name = "powder_cloud";
   group.position.copy(at);
   scene.add(group);
 
-  const puffs: { sprite: THREE.Sprite; drift: THREE.Vector3; scale: number; spin: number }[] = [];
+  // How long gas keeps coming out of the bore. A tight-patched rifle charge is
+  // spent in half the time a musket's loose one takes to finish venting.
+  const vent = Math.min(life * 0.4, fine ? 0.1 : 0.17);
+  // Everything below the board would be under the stone, so a bank that sinks
+  // that far flattens against it instead.
+  const floor = options.floor != null ? options.floor - at.y : null;
   const side = new THREE.Vector3(0, 1, 0).cross(options.direction).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+
+  const puffs: PowderPuff[] = [];
   for (let i = 0; i < options.count; i += 1) {
+    // Where this lobe sits in the vent: 0 is the first gas out of the bore.
+    const order = options.count <= 1 ? 0 : i / (options.count - 1);
     const material = new THREE.SpriteMaterial({
       map: fine ? sharedFinePuffMap() : sharedPuffMap(),
       color: tint,
@@ -751,48 +825,95 @@ export async function spawnPowderCloud(
       rotation: Math.random() * Math.PI * 2,
     });
     const sprite = new THREE.Sprite(material);
-    const scale = options.size * (fine ? 0.4 + Math.random() * 0.42 : 0.55 + Math.random() * 0.6);
-    sprite.scale.setScalar(scale * 0.4);
     sprite.renderOrder = 5;
     sprite.frustumCulled = false;
+    sprite.visible = false;
     group.add(sprite);
+
+    // Later gas is cooler and slower: it barely clears the muzzle and is left
+    // curling around it, which is the part that hangs on the barrel.
+    const push = 1 - order * 0.62;
+    const seed = size * (fine ? 0.16 + Math.random() * 0.2 : 0.22 + Math.random() * 0.28);
     puffs.push({
       sprite,
-      // Blown forward down the line of fire, with a little spread either side.
-      drift: options.direction
+      material,
+      seat: options.direction
         .clone()
-        .multiplyScalar(options.size * (fine ? 0.34 + Math.random() * 0.6 : 0.5 + Math.random() * 0.9))
-        .addScaledVector(side, (Math.random() - 0.5) * options.size * (fine ? 0.5 : 0.9))
-        // Thin smoke has nothing to hang on: it lifts instead of sitting there.
-        .setY(options.size * (fine ? 0.3 + Math.random() * 0.44 : 0.14 + Math.random() * 0.3)),
-      scale,
-      spin: (Math.random() - 0.5) * (fine ? 1.4 : 0.9),
+        .multiplyScalar(size * order * (fine ? 0.16 : 0.22))
+        .addScaledVector(side, (Math.random() - 0.5) * size * 0.22)
+        .addScaledVector(up, (Math.random() - 0.5) * size * 0.2),
+      jet: options.direction
+        .clone()
+        .multiplyScalar(size * (fine ? 5.4 : 4.1) * push * (0.7 + Math.random() * 0.6))
+        // Gas escaping past the ball never leaves straight: it fans off the bore.
+        .addScaledVector(side, (Math.random() - 0.5) * size * (fine ? 1.5 : 2.6))
+        .addScaledVector(up, (Math.random() - 0.35) * size * (fine ? 1.9 : 1.5)),
+      // A thin jet is stopped by the air faster than a fat sooty one.
+      drag: (fine ? 5.4 : 4.2) * (0.8 + Math.random() * 0.5),
+      born: vent * order * (0.55 + Math.random() * 0.9),
+      // Small lobes are torn apart first; a few always outlast the rest, so the
+      // bank never switches off on one frame.
+      span: life * (0.5 + Math.random() * 0.5) * (Math.random() < 0.18 ? 1.25 : 1),
+      seed,
+      swell: fine ? 3.4 + Math.random() * 1.8 : 2.6 + Math.random() * 1.5,
+      lift: size * (fine ? 0.34 + Math.random() * 0.3 : 0.15 + Math.random() * 0.22),
+      churn: new THREE.Vector3(
+        (Math.random() - 0.5) * size * 0.5,
+        (Math.random() - 0.5) * size * 0.3,
+        (Math.random() - 0.5) * size * 0.5,
+      ),
+      rate: 1.1 + Math.random() * 1.6,
+      phase: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * (fine ? 1.5 : 1),
+      peak: (fine ? 0.34 : 0.56) * density * (0.7 + Math.random() * 0.6),
     });
   }
 
+  const place = new THREE.Vector3();
   try {
     await tweens.to({
       duration: life,
       easing: (t: number) => t,
       onUpdate: (t: number) => {
-        // Fast bloom, long dirty fade — powder smoke outlives the flash by far.
-        // Fine powder thins out on a steeper curve: it is gone while a musket's
-        // bank is still lying across the board.
-        const bloom = Math.min(1, t / (fine ? 0.08 : 0.12));
-        const fade = Math.pow(1 - t, fine ? 2.3 : 1.5);
-        const peak = (fine ? 0.3 : 0.5) * density;
-        const growth = fine ? 2.1 : 1.5;
+        const now = t * life;
         for (const puff of puffs) {
-          const material = puff.sprite.material as THREE.SpriteMaterial;
-          material.opacity = peak * bloom * fade;
-          material.rotation += puff.spin * 0.016;
-          puff.sprite.scale.setScalar(puff.scale * (0.4 + t * growth));
-          puff.sprite.position.copy(puff.drift).multiplyScalar(t);
+          const age = now - puff.born;
+          if (age <= 0 || age >= puff.span) {
+            puff.sprite.visible = false;
+            continue;
+          }
+          puff.sprite.visible = true;
+          const u = age / puff.span;
+
+          // Lunge, then stall: the ejection speed is gone in a few frames and
+          // what is left is a cloud sitting in the air being moved around.
+          const carried = (1 - Math.exp(-puff.drag * age)) / puff.drag;
+          place.copy(puff.seat).addScaledVector(puff.jet, carried);
+          // Buoyancy builds instead of being an initial kick: powder smoke sags
+          // off the barrel first and only then climbs.
+          place.y += puff.lift * age * age * 0.75;
+          if (options.draft) place.addScaledVector(options.draft, age);
+          // Turbulent curl — the lobe rolls over itself rather than sliding.
+          const swirl = Math.min(1, age / 0.4);
+          place.addScaledVector(puff.churn, Math.sin(age * puff.rate + puff.phase) * swirl);
+          if (floor != null && place.y < floor) place.y = floor;
+          puff.sprite.position.copy(place);
+
+          // Entrainment: fast swell while the gas is still hot, then easing off.
+          const width = puff.seed * (1 + (puff.swell - 1) * Math.pow(u, 0.55));
+          puff.sprite.scale.setScalar(width);
+          // Thinning as it spreads (mass over volume) with a soft tail on top, so
+          // the last of it dissolves into the hall rather than being switched off.
+          const bloom = Math.min(1, age / (fine ? 0.05 : 0.07));
+          const thinning = Math.pow(puff.seed / width, 1.35);
+          puff.material.opacity = puff.peak * bloom * thinning * Math.pow(1 - u, 0.85);
+          // Angular drag: the curl slows as the lobe loses its energy.
+          puff.material.rotation += puff.spin * 0.016 * (1 - u * 0.7);
         }
       },
     });
   } finally {
-    for (const puff of puffs) (puff.sprite.material as THREE.Material).dispose();
+    for (const puff of puffs) puff.material.dispose();
     group.removeFromParent();
     group.clear();
   }

@@ -337,11 +337,25 @@ round shot) and `.through`, which decides whether there is exit spall as well as
 caller layers over the top is tinted by `impactDust(body)`, and the instance count is capped by
 `captureParticles`, so the whole thing scales down with the graphics preset.
 
+**The powder bank is built as air, not as a sprite pop.** Each lobe of `spawnPowderCloud()` runs on
+its own clock, integrated from its absolute age (closed form, so it looks identical at any frame
+rate) through three phases: lobes are **born in sequence** across the vent (0.17 s smoothbore,
+0.10 s rifle) with the first gas shoved hardest, that speed is then eaten by the air
+(`jet/drag · (1 − e^−drag·age)` — a lunge of about a square, then a stall), and from there only
+buoyancy (building as `age²`, so smoke sags off the barrel before it climbs), `HALL_DRAFT` and a
+per-lobe `sin` curl move it. It dissolves because it **spreads**: opacity carries
+`(seed/width)^1.35` on top of its fade, lifetimes vary per lobe, and `floor` flattens anything that
+sags to `BOARD_TOP` instead of sinking through the stone. `GUNS[kind].smokeHang` states the linger
+(1.7 s flintlock → 3.8 s field gun) and `boreTrickle()` keeps emitting wisps at the **live**
+`muzzleOrigin()` afterwards, so the thread of smoke follows the barrel as the weapon comes down.
+
 `GUNS[kind]` also carries the character of the *smoke* as well as the bore. The marksman's rifled
 barrel fires a small, tight-patched charge that burns almost completely, so its bank is built from
 `fineSmokeTexture()` — a pale, threadier bloom — tinted a fixed ash grey (`0xdfe4ea`) instead of
-the faction livery, at 0.62 density, and it lifts, tears apart and clears in two-thirds the time
-of a musket's soot. Every other barrel keeps the dirty livery-tinted bank.
+the faction livery, at 0.74 density. Less smoke than a musket is answered with **more, smaller
+lobes** (12 against 8) that leave faster, stall sooner and lift harder — hanging 3.2 s with the bore
+trickling 1.5 s after — rather than with a thicker cloud. Every other barrel keeps the dirty
+livery-tinted bank.
 
 **A held firearm has no rest angle.** Blades and staves are parented to a hand bone at a fixed
 body-space angle, which is fine for a sabre worn point-up but leaves a rifle standing upright

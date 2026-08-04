@@ -500,7 +500,8 @@ still closes with the sabre. The beat is:
    the height the knee put it, not at standing height.
 4. `spawnMuzzleFlash()` detonates the charge at the barrel mouth (see *The flash at the bore*),
    `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
-   smoothbore, pale ash grey for the rifle (see below) — and `audio.gunshot()` fires the report.
+   smoothbore, pale ash grey for the rifle (see *The powder bank*) — `boreTrickle()` keeps the
+   barrel smoking in the man's hands afterwards, and `audio.gunshot()` fires the report.
 5. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
    separates a gun from a lobbed spell — trailing wisps of smoke as it goes. A ball out of a
    *smoothbore* bellies off the line of sight and comes back onto the body (see below); the rifled
@@ -665,23 +666,63 @@ voice plays alone until the take has decoded.
 
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
 board — a dry crack, a puff of smoke, no spectacle. The marshal's rifle is the longest held
-breath (0.5 s of aim before a 2.1 s drill, the deepest lens punch-in) and the flattest, fastest ball, with less flame
-than the line's musket: a marksman is one clean crack, not a volley. The musket is
-a hard crack over a chest thump and a real bank of white smoke. The field gun is the loudest
-thing in the hall, louder than the crown's judgement: a sub-bass slam with the report coming back
-off the far wall.
+breath (0.62 s of aim — dropping into the kneel *is* his aim — before a 1.7 s drill) and the
+flattest, fastest ball, with less flame than the line's musket: a marksman is one clean crack,
+not a volley. The musket is a hard crack over a chest thump and a real bank of white smoke. The
+field gun is the loudest thing in the hall, louder than the crown's judgement: a sub-bass slam
+with the report coming back off the far wall.
+
+### The powder bank
+
+Smoke is the slowest thing a gun makes. The flash is three frames and the ball is half a second,
+but the cloud is still drifting over the square long after both — so `spawnPowderCloud()` is built
+as air rather than as a sprite pop. It used to be a handful of billboards that appeared on one
+frame, slid outward in a straight line at constant speed and dimmed together, which read as a
+single puff switching on and off. A charge actually does three distinct things, and each lobe of
+the bank now carries all three on **its own clock**, integrated from its absolute age (a closed
+form, so the smoke is identical at any frame rate):
+
+1. **The vent.** Gas leaves the bore over about a tenth of a second, not at once, so the lobes are
+   *born in sequence* across `vent` (0.17 s for a smoothbore, 0.10 s for the rifle's tight-patched
+   charge) and the earliest gas gets the hardest shove (`push = 1 − order·0.62`). The bank visibly
+   grows *out of* the barrel instead of appearing around it, and the cool late gas is left curling
+   at the muzzle.
+2. **The stall.** That ejection speed is eaten by the air almost immediately — each lobe travels
+   `jet/drag · (1 − e^−drag·age)`, i.e. it lunges perhaps a square forward and stops. From there it
+   is only buoyancy (which *builds* as `age²`, because powder smoke sags off the barrel before it
+   climbs), the hall's own draft, and its own turbulent curl: a per-lobe `sin` swirl so the smoke
+   rolls over itself rather than sliding rigidly, with angular drag on the sprite rotation.
+3. **The dissolve.** Mass is conserved while volume is not, so opacity carries
+   `(seed/width)^1.35` on top of its fade: smoke gets faint **because it is spreading**. Each lobe
+   swells on `age^0.55` (fast while the gas is hot, easing off after) and holds its own lifetime,
+   with roughly one in six given a longer one — the bank thins into a haze you can read the board
+   through and never ends on a single frame.
+
+Two shared touches keep it in the room: `HALL_DRAFT` (a couple of centimetres a second, the same
+for both armies) is what finally carries the bank *off* the square rather than letting it dim where
+it was made, and `floor` flattens anything that sags to `BOARD_TOP` instead of letting it sink
+through the stone. `GUNS[kind].smokeHang` states the linger per barrel — 1.7 s for the Emperor's
+flintlock up to 3.8 s for the field gun — and every one of them outlives its own shot.
+
+**The barrel goes on smoking after the crack.** The bank is made once, where the gun was fired, and
+left in the air — air does not follow a man around. But a fouled bore keeps venting for a second or
+two, and *that* smoke belongs to the weapon, so `boreTrickle()` emits `GUNS[kind].boreSmoke.wisps`
+threads on a clock, each one reading `PieceView.muzzleOrigin()` at the moment it is made. The
+thread visibly trails the muzzle as the marksman brings his rifle down out of the kneel, and each
+wisp is thinner, slower and longer-lived than the last, because the bore is cooling.
 
 **The rifle's smoke is its own.** `GUNS[kind]` carries the character of the powder as well as the
 bore (`smokeTint`, `smokeDensity`, `fineSmoke`), because a rifled barrel firing a small,
 tight-patched charge burns it almost completely. The marksman's bank uses `fineSmokeTexture()`
 instead of the musket's soot blob — a high-key, low-alpha, threadier bloom — tinted a fixed pale
-ash grey (`0xdfe4ea`) rather than the faction livery, at **0.62 density**: sheer enough to keep
-seeing the target through it. It also behaves differently: the puffs stay tighter to the barrel
-line, **lift** instead of hanging, spin faster, expand harder (`growth 2.1`) and thin out on a
-steeper curve over two-thirds the life — gone while a musket's bank is still lying across the
-board. The wisps the ball trails on its way over carry the same pale tint, shorter life and more
-rise. Every other barrel keeps the dirty livery-tinted soot (the field gun at 1.15 density, the
-Emperor's flintlock at 0.85 — a puff, no spectacle).
+ash grey (`0xdfe4ea`) rather than the faction livery, at **0.74 density**: sheer enough to keep
+seeing the target through it. The answer to a rifle making less smoke than a musket was never to
+make it *thicker*: there are **more lobes** (12 against the musket's 8), each smaller, faster off
+the bore, quicker to stall, lifting harder and expanding further — and it **hangs 3.2 s** with the
+bore trickling for 1.5 s after, so the shot can be watched coming apart. The wisps the ball trails
+on its way over carry the same pale tint, shorter life and more rise. Every other barrel keeps the
+dirty livery-tinted soot (the field gun at 1.15 density and 14 lobes, the Emperor's flintlock at
+0.85 — a puff, no spectacle).
 
 The piece is not nudged by its own charge, it is **thrown** (`gunRecoil()` →
 `PieceView.setTrainRecoil(back, lift)`): the wheels leave the stone and the muzzle jumps in under
