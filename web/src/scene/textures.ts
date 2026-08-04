@@ -732,6 +732,14 @@ export function pillarTexture(): THREE.CanvasTexture {
 /**
  * Muzzle flash: a white-hot core inside a ragged star of burning powder. Drawn
  * once and billboarded, so a shot reads from every camera angle on the board.
+ *
+ * The star is deliberately *overdriven* — a broad plateau of pure white across
+ * the middle third rather than a single bright pixel at the centre. Two reasons.
+ * First, the bloom pass only picks up what already clips at 1, so a flash built
+ * as a polite gradient blooms on a handful of pixels and reads as a dull spark.
+ * Second, the round that leaves this bore is now a real sculpt drawn several
+ * calibres wide: a flame narrower and dimmer than the ball it launches makes the
+ * shot look like the ball was dropped rather than fired.
  */
 export function muzzleFlashTexture(): THREE.CanvasTexture {
   const size = 256;
@@ -739,27 +747,34 @@ export function muzzleFlashTexture(): THREE.CanvasTexture {
   const c = size / 2;
 
   const halo = ctx.createRadialGradient(c, c, 0, c, c, size * 0.5);
+  // Flat white out to a fifth of the radius: this is the part that clips and
+  // therefore the part the bloom pass actually sees.
   halo.addColorStop(0, "rgba(255,255,255,1)");
-  halo.addColorStop(0.12, "rgba(255,248,214,0.95)");
-  halo.addColorStop(0.32, "rgba(255,196,96,0.45)");
-  halo.addColorStop(0.66, "rgba(255,132,40,0.14)");
+  halo.addColorStop(0.2, "rgba(255,255,251,1)");
+  halo.addColorStop(0.34, "rgba(255,244,198,0.82)");
+  halo.addColorStop(0.54, "rgba(255,198,104,0.42)");
+  halo.addColorStop(0.78, "rgba(255,138,44,0.16)");
   halo.addColorStop(1, "rgba(255,110,30,0)");
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, size, size);
 
-  // Powder does not burn in a circle: uneven petals of flame off the bore.
   ctx.globalCompositeOperation = "lighter";
-  const petals = 9;
+
+  // Powder does not burn in a circle: uneven petals of flame off the bore. They
+  // now reach almost to the edge of the sprite, so the flame has a ragged
+  // silhouette at its full drawn width instead of a soft ball in the middle.
+  const petals = 13;
   for (let i = 0; i < petals; i += 1) {
-    const angle = (i / petals) * Math.PI * 2 + Math.random() * 0.3;
-    const reach = size * (0.26 + Math.random() * 0.22);
-    const width = size * (0.03 + Math.random() * 0.035);
+    const angle = (i / petals) * Math.PI * 2 + Math.random() * 0.34;
+    const reach = size * (0.31 + Math.random() * 0.18);
+    const width = size * (0.035 + Math.random() * 0.045);
     ctx.save();
     ctx.translate(c, c);
     ctx.rotate(angle);
     const petal = ctx.createLinearGradient(0, 0, reach, 0);
-    petal.addColorStop(0, "rgba(255,252,232,0.85)");
-    petal.addColorStop(0.45, "rgba(255,201,104,0.4)");
+    petal.addColorStop(0, "rgba(255,255,244,1)");
+    petal.addColorStop(0.3, "rgba(255,238,178,0.72)");
+    petal.addColorStop(0.62, "rgba(255,196,96,0.34)");
     petal.addColorStop(1, "rgba(255,140,48,0)");
     ctx.fillStyle = petal;
     ctx.beginPath();
@@ -770,6 +785,40 @@ export function muzzleFlashTexture(): THREE.CanvasTexture {
     ctx.fill();
     ctx.restore();
   }
+
+  // Three long primary jets: where the charge actually vents. Thin, near-white
+  // and running to the sprite edge, they are what makes the flash read as an
+  // explosion escaping a tube rather than as a glowing blob.
+  for (let i = 0; i < 3; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const reach = size * (0.44 + Math.random() * 0.06);
+    const width = size * 0.022;
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(angle);
+    const jet = ctx.createLinearGradient(0, 0, reach, 0);
+    jet.addColorStop(0, "rgba(255,255,255,1)");
+    jet.addColorStop(0.5, "rgba(255,246,206,0.5)");
+    jet.addColorStop(1, "rgba(255,170,70,0)");
+    ctx.fillStyle = jet;
+    ctx.beginPath();
+    ctx.moveTo(0, -width);
+    ctx.lineTo(reach, 0);
+    ctx.lineTo(0, width);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // A second pass of pure white over the middle, stacked additively, so the
+  // core is genuinely blown out rather than merely bright.
+  const core = ctx.createRadialGradient(c, c, 0, c, c, size * 0.17);
+  core.addColorStop(0, "rgba(255,255,255,1)");
+  core.addColorStop(0.6, "rgba(255,252,235,0.7)");
+  core.addColorStop(1, "rgba(255,240,200,0)");
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, size, size);
+
   ctx.globalCompositeOperation = "source-over";
 
   const texture = new THREE.CanvasTexture(canvas);

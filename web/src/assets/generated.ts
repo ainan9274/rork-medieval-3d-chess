@@ -236,19 +236,24 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     },
     // The Empire's marksman. He carries no staff and casts nothing: the rifle
     // comes up, he goes down on one knee, and the shot is taken from there.
-    //   * stance  — waits out the turn already down on one knee, rifle up and
-    //     scanning: the sharpshooter silhouette reads at a glance from the
-    //     high camera, and it is the same kneel the strike fires from, so the
-    //     shot grows out of the pose instead of restaging it.
+    //   * stance  — stands at the ready between turns, rifle lowered, watching
+    //     the board. He used to *wait out the whole game* on one knee, which
+    //     read as a man permanently crouched behind cover; the kneel is worth
+    //     something only if it is the thing he does when he takes a shot.
+    //   * aim     — down onto the knee, rifle up, scanning the body across the
+    //     board: the drop into the kneel is now the first beat of the shot, and
+    //     it is the same kneel the strike fires from, so the shot grows out of
+    //     the pose instead of restaging it.
     //   * strike  — barrel levelled from that kneel and fired
     //   * stride  — rifle carried across the body at the advance
-    //   * reload  — powder and ball, still on the knee he fired from
-    // Alternatives on the same rig: `...-anim-lower-weapon-look-raise.glb`
-    // (stands at the ready), `...-anim-combat-stance.glb` (bare-fisted guard),
-    // `...-anim-charged-spell-cast-1.glb` (the old staff-of-office cast).
+    //   * reload  — powder and ball, still on the knee he fired from, and he
+    //     comes back up to his feet with the stance afterwards
+    // Alternatives on the same rig: `...-anim-combat-stance.glb` (bare-fisted
+    // guard), `...-anim-charged-spell-cast-1.glb` (the old staff cast).
     b: {
       rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
-      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb`,
+      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb`,
+      aim: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb`,
       attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-female-crouch-pick-gun-point-forward.glb`,
       death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
       walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb`,

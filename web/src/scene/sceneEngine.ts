@@ -23,7 +23,8 @@ import {
 } from "./pieces";
 import { PostFX } from "./postfx";
 import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
-import type { AmmoKind } from "./ammunition";
+import { AMMUNITION, type AmmoKind } from "./ammunition";
+import { disposeShatterAssets, impactDust, spawnImpactShatter, type ImpactBody } from "./shatter";
 import {
   GUN_LOOK,
   disposeGunAssets,
@@ -48,35 +49,6 @@ export type CameraPreset = "white" | "black" | "top" | "cinematic";
  */
 export type ShowcaseCamera = "still" | "orbit" | "follow";
 
-/**
- * A marksman's sight picture, mirrored one-for-one by the UI overlay.
- *
- * The rifle is the only arm on the board with real sights, so it is the only
- * one that earns this: the frame closes down onto the body the moment the
- * barrel comes round, and opens again once the shot has been taken.
- */
-export interface ScopeState {
-  /** `aim` narrows the frame onto the target; `fire` is the frame the shot leaves. */
-  phase: "aim" | "fire";
-  /** Seconds the sight picture is held before the shot, so the UI can pace itself. */
-  hold: number;
-  /**
-   * How badly the hands wander on this particular shot, 0..1.
-   *
-   * Rolled per shot from the range being asked of the man — a body two squares
-   * away is held rock steady, one across the whole hall visibly floats — plus a
-   * little luck, so the same shot is never unsteady in the same way twice. The
-   * overlay reads it as the amplitude of the reticle's drift.
-   */
-  tremor: number;
-}
-
-/** Where a sighted body sits on screen, as 0..1 across the canvas. */
-export interface ScreenPoint {
-  x: number;
-  y: number;
-}
-
 export interface SceneCallbacks {
   onLoadProgress: (ratio: number) => void;
   onReady: () => void;
@@ -92,11 +64,6 @@ export interface SceneCallbacks {
    * rendering, so the UI can persist that choice for the next visit.
    */
   onRenderFallback?: (message: string, safe: boolean) => void;
-  /**
-   * The marksman's sight picture opening, firing and closing. Null means the
-   * eye has come off the sights and the overlay should open the frame again.
-   */
-  onScope?: (state: ScopeState | null) => void;
 }
 
 interface CameraShot {
@@ -123,23 +90,6 @@ const SHOWCASE_SHOT: CameraShot = {
 
 /** What the follow camera looks at between moves. */
 const BOARD_FOCUS = new THREE.Vector3(0, 0.45, 0);
-
-/** Scratch vector for projecting the sighted body; never held between calls. */
-const SCOPE_PROBE = new THREE.Vector3();
-
-/**
- * How unsteady the marksman's hands are on a given shot, 0..1.
- *
- * Range is what decides it: a body two squares off is held almost dead still,
- * one at the far corner of the hall floats badly under the reticle. A small
- * roll on top means the same shot is never unsteady in the same way twice, so
- * the sight picture never looks like a looping animation.
- */
-function handTremor(shooter: THREE.Vector3, target: THREE.Vector3): number {
-  const squares = shooter.distanceTo(target) / TILE;
-  const reach = Math.min(1, Math.max(0, (squares - 1.2) / 6.2));
-  return Math.min(1, 0.18 + reach * 0.62 + Math.random() * 0.22);
-}
 
 /**
  * The flat tactical map: high above the board, dead centre and shot through a
@@ -440,8 +390,21 @@ interface GunProfile {
   drill: { seconds: number; impact: number };
   /** 0 = pistol lock, 0.5 = musket, 1 = field gun — drives the whole mix. */
   calibre: number;
-  /** Width of the muzzle flash in world units. */
-  flash: number;
+  /**
+   * Width of the muzzle flash, as a multiple of the round's *rendered* diameter
+   * (`ball` × the ammunition's `gauge`) rather than as an absolute size.
+   *
+   * This has to be a ratio, not a number of world units. The rounds are drawn at
+   * a legible gauge — 1.7–2.6× the true bore — and when the flash was authored
+   * independently the two drifted apart: a sculpted Minié bullet came out of a
+   * flame barely three ball-widths across, so the projectile out-shone the charge
+   * that launched it. Tie the flame to the same number that sizes the ball and a
+   * bigger round always gets a bigger flash, for free.
+   *
+   * Real black powder vents roughly 4–8 bore diameters of flame; a clean-burning
+   * rifled barrel sits at the bottom of that range and a field gun at the top.
+   */
+  flare: number;
   /**
    * Which round is rammed down this barrel (see `scene/ammunition.ts`). It
    * decides the shape of the thing that crosses the board, whether it flies a
@@ -504,7 +467,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // come up and be pointed before it goes off.
     drill: { seconds: 1.15, impact: 0.5 },
     calibre: 0.06,
-    flash: 0.44,
+    flare: 4.4,
     ammo: "pistolBall",
     ball: 0.055,
     speed: 0.1,
@@ -527,7 +490,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // Musket off the shoulder, levelled, fired: the report lands past halfway.
     drill: { seconds: 1.3, impact: 0.56 },
     calibre: 0.44,
-    flash: 0.6,
+    flare: 4.7,
     // .69 of soft lead — the fattest small-arms round on the board, and the one
     // that bellies furthest off the line of sight.
     ammo: "musketBall",
@@ -552,7 +515,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // The crew steps in to the trail and leans on the lanyard — unhurried.
     drill: { seconds: 1.25, impact: 0.52 },
     calibre: 1,
-    flash: 1.35,
+    // The heaviest charge in the hall, and the widest sheet of flame with it.
+    flare: 6,
     // Solid iron, straight out of the sand mould and still hot from the bore.
     ammo: "roundShot",
     // The one round on the board heavy enough to watch travel on its own merits.
@@ -575,15 +539,24 @@ const GUNS: Record<PieceKind, GunProfile> = {
   // small and tightly patched, so it burns clean: the bank off this barrel is
   // pale ash grey, sheer enough to see the target through, and gone in a beat.
   b: {
-    zoom: 8.5,
-    aim: 0.5,
+    // Framed like every other shot in the hall. This used to be the hardest
+    // punch-in on the board, paced to a full-screen sight picture that closed
+    // over the interface; both are gone. The kill is now watched from the same
+    // distance as the line infantry's volley — the man kneeling in frame is the
+    // thing to look at, not a lens effect wrapped around him.
+    zoom: 5.5,
+    // Long enough for the knee to actually reach the stone before the drill
+    // starts: dropping into the kneel *is* his aim now.
+    aim: 0.62,
     voice: "rifle",
-    // The longest drill on the board: down onto the knee, barrel levelled, head
-    // to the sights, breath held, and only then the shot. This is the beat the
-    // sight-picture overlay is paced against.
-    drill: { seconds: 2.1, impact: 0.64 },
+    // Still the longest drill on the board — knee down, barrel levelled, head to
+    // the sights, breath held, then the shot — but no longer stretched to fill an
+    // overlay, so it plays closer to the speed a man actually moves at.
+    drill: { seconds: 1.7, impact: 0.6 },
     calibre: 0.5,
-    flash: 0.5,
+    // A small, tightly patched charge burning almost completely: the least flame
+    // of any barrel on the board, in keeping with its pale ash smoke.
+    flare: 4.9,
     // The only round in the army with rifling behind it: conical, spun hard,
     // and dead straight where every ball on the board wanders.
     ammo: "minieBullet",
@@ -611,7 +584,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     voice: "pistol",
     drill: { seconds: 1.35, impact: 0.54 },
     calibre: 0.12,
-    flash: 0.48,
+    flare: 4.6,
     ammo: "pistolBall",
     ball: 0.058,
     speed: 0.096,
@@ -632,7 +605,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     voice: "musket",
     drill: { seconds: 1.1, impact: 0.5 },
     calibre: 0.4,
-    flash: 0.55,
+    flare: 4.6,
     // A cavalry carbine: the same ball as the line, off a shorter barrel.
     ammo: "musketBall",
     ball: 0.072,
@@ -649,6 +622,19 @@ const GUNS: Record<PieceKind, GunProfile> = {
     aftershock: 0,
   },
 };
+
+/**
+ * How wide the flame off a given barrel is drawn, in world units.
+ *
+ * The single source of truth for the size of a shot: the round's rendered
+ * diameter (bore × the legibility gauge from `ammunition.ts`) times the barrel's
+ * own {@link GunProfile.flare}. Everything at the muzzle — the flash, the ember
+ * shower, and how far clear of the bore the ball is spawned — is scaled off this
+ * one number, so a change to a round's gauge can never leave its flash behind.
+ */
+function muzzleFlare(gun: GunProfile): number {
+  return gun.ball * AMMUNITION[gun.ammo].gauge * gun.flare;
+}
 
 /**
  * A marching distance profile: a short push-off, a long stretch at constant
@@ -736,18 +722,6 @@ export class SceneEngine {
   private pointerDownAt: { x: number; y: number; square: SquareId | null } | null = null;
   private legalTargets = new Map<SquareId, boolean>();
   private previewing = false;
-
-  /**
-   * The body currently under a marksman's sights, kept so the overlay's reticle
-   * can be told where it sits on screen every frame while the camera is still
-   * moving. Cleared before the body is banished, so a disposed view is never
-   * projected.
-   */
-  private scopeVictim: PieceView | null = null;
-  /** True between the sights coming up and the eye coming off them. */
-  private scopeLive = false;
-  /** Unsteadiness rolled for the shot in progress, so `fire` reports the same figure. */
-  private scopeTremor = 0;
 
   private lastFrameTime = 0;
   private elapsed = 0;
@@ -1350,7 +1324,6 @@ export class SceneEngine {
           // A broken effect must never strand a figure in the middle of a fight:
           // finish the kill the plain way so the board stays consistent.
           console.warn("[scene] battle beat failed", error);
-          this.closeScope();
           this.camera.fov = DEFAULT_FOV;
           this.camera.updateProjectionMatrix();
           piece.setStrikeTilt(0);
@@ -2022,11 +1995,6 @@ export class SceneEngine {
     this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
     const originalFov = this.camera.fov;
 
-    // Only the rifle carries sights, so only the rifle earns the sight picture.
-    // It is deliberately NOT opened yet: the man is seen to shoulder the weapon
-    // and settle on the body in the hall first, and the frame only closes down
-    // once the barrel is already up (below).
-    const sighted = attacker.kind === "b";
     void this.tweens.to({
       duration: 0.26,
       easing: Ease.outCubic,
@@ -2079,13 +2047,6 @@ export class SceneEngine {
         easing: Ease.outCubic,
         onUpdate: (t) => attacker.setStrikeTilt(-0.14 * (aiming ? 1 : 0.6) - 0.06 * t),
       });
-    } else if (sighted) {
-      // Watch him go down onto the knee and level the barrel in the hall, then
-      // drop in behind the sights for the held breath that ends in the shot.
-      const inTheOpen = Math.min(0.62, untilShot * 0.46);
-      await wait(inTheOpen);
-      this.openScope(victim, Math.max(0.3, untilShot - inTheOpen), handTremor(from, victimSpot));
-      await wait(untilShot - inTheOpen);
     } else {
       await wait(untilShot);
     }
@@ -2103,15 +2064,22 @@ export class SceneEngine {
       volume: 1,
       voice: gun.voice,
     });
-    if (sighted) this.fireScope();
     this.shake.add(Math.min(1, 0.3 + gun.calibre * 0.7));
 
+    // Flame width is read off the round that is about to leave the bore, so the
+    // charge always out-shines its own projectile.
+    const flame = muzzleFlare(gun);
     void spawnMuzzleFlash(this.scene, this.tweens, muzzle, {
       look,
-      size: gun.flash,
+      size: flame,
       direction: aim,
-      life: 0.09 + gun.calibre * 0.06,
-      light: settings.postFx ? this.spellLights.acquire(look.light, 4.4) : null,
+      // Held a shade longer than before: the flash now has an ignition plateau to
+      // sit on, and a couple of extra frames is the difference between a shot you
+      // see and a shot you only hear.
+      life: 0.12 + gun.calibre * 0.07,
+      // A wider sheet of flame throws light further into the hall, so the
+      // borrowed slot's reach grows with the charge rather than staying fixed.
+      light: settings.postFx ? this.spellLights.acquire(look.light, 4.4 + flame * 2.6) : null,
     });
     // A smoothbore leaves soot in the faction's livery tint; the marksman's
     // rifled barrel leaves pale ash grey you can see the hall through.
@@ -2126,13 +2094,15 @@ export class SceneEngine {
       density: gun.smokeDensity,
       fine: gun.fineSmoke,
     });
-    // Sparks and burning grains thrown out of the pan and the bore.
-    this.effects.spawnBurst(muzzle, look.ball, Math.round(settings.captureParticles * 0.3 * (0.5 + gun.calibre)), {
-      speed: 2.2 + gun.calibre * 2.4,
-      life: 0.5,
+    // Sparks and burning grains thrown out of the pan and the bore. Sized off the
+    // flame rather than off a constant, so the grains stay in scale with it: a
+    // field gun throws visible embers, a pistol lock throws a pinch of them.
+    this.effects.spawnBurst(muzzle, look.ball, Math.round(settings.captureParticles * 0.44 * (0.5 + gun.calibre)), {
+      speed: 2.6 + gun.calibre * 3,
+      life: 0.55,
       gravity: 2.4,
-      radius: 0.06,
-      size: 0.07,
+      radius: 0.06 + flame * 0.06,
+      size: 0.07 + flame * 0.055,
       drag: 2.4,
     });
 
@@ -2147,7 +2117,9 @@ export class SceneEngine {
     // The round leaves from just clear of the bore rather than from the muzzle
     // point itself: started dead on the muzzle it spawns inside the flash and the
     // powder bank, and the first third of its flight is invisible.
-    const clear = muzzle.clone().addScaledVector(aim, Math.min(0.34, gun.flash * 0.42));
+    // With a bigger flame this offset has to grow with it, or the round spends its
+    // opening frames inside the fire it was launched by.
+    const clear = muzzle.clone().addScaledVector(aim, Math.min(0.42, flame * 0.44));
     const smoking = settings.captureParticles >= 34;
     let nextWisp = 0.12;
     await flyShot(this.scene, this.tweens, clear, chest, {
@@ -2180,12 +2152,34 @@ export class SceneEngine {
     audio.play("capture", Math.min(1, 0.7 * power));
     this.strikeImpact(strikeSquare, Math.min(1.5, power));
     this.effects.spawnFlash(chest, Math.min(4.6, 1.9 * power), 0.2);
-    this.effects.spawnBurst(chest, look.flash, Math.round(settings.captureParticles * 0.8 * power), {
+
+    // The moment itself: the body breaks open where the round went in. Which
+    // debris comes off it is read off the victim rather than off the shooter —
+    // kingdom marble chips, Sun Empire obsidian flakes, steel spall off a
+    // cuirass, or wool and gilt braid off a Grande Armée coat. The round decides
+    // how hard: a pistol ball barely marks the stone, a six-pounder guts it.
+    const round = AMMUNITION[gun.ammo];
+    const body = this.impactBody(victim);
+    const violence = round.shatter * (0.75 + power * 0.25);
+    void spawnImpactShatter(this.scene, this.tweens, chest, {
+      body,
+      along: aim,
+      power: violence,
+      floor: BOARD_TOP,
+      through: round.through,
+      budget: Math.round(settings.captureParticles * 0.85),
+      light: settings.postFx ? this.spellLights.acquire(0xffd7a0, 3.4) : null,
+    });
+    // A thinner warm burst on top of the debris: the powder that came with the
+    // round, not the round itself.
+    this.effects.spawnBurst(chest, look.flash, Math.round(settings.captureParticles * 0.34 * power), {
       speed: 3.6 * (0.9 + power * 0.1),
-      life: 0.6,
+      life: 0.45,
       gravity: 2.2,
       radius: 0.1,
+      drag: 2.6,
     });
+    // The haze the wreckage lifts is the colour of what just broke.
     this.effects.spawnSmoke(chest, {
       count: Math.max(2, Math.round(settings.captureParticles * 0.14 * power)),
       radius: 0.24 * power,
@@ -2194,7 +2188,7 @@ export class SceneEngine {
       life: 0.9,
       speed: 1,
       rise: 0.5,
-      color: look.smoke,
+      color: impactDust(body),
       opacity: 0.4,
     });
     this.shake.add(Math.min(1, 0.3 * power));
@@ -2213,13 +2207,17 @@ export class SceneEngine {
           light: null,
         });
         audio.ballImpact({ pan: this.stereoPan(beyond), volume: 0.42 });
-        this.effects.spawnBurst(beyond, 0xffc98a, Math.round(settings.captureParticles * 0.22), {
-          speed: 3.2,
-          life: 0.5,
-          gravity: 5.5,
-          radius: 0.08,
-          size: 0.06,
-          drag: 2.2,
+        // Hot iron on flagstone: the ricochet throws stone chips and a long
+        // shower of sparks that skitter away across the floor.
+        void spawnImpactShatter(this.scene, this.tweens, beyond, {
+          body: "flagstone",
+          // Skipping off the floor, so the spall comes up out of the stone.
+          along: aim.clone().setY(-0.75).normalize(),
+          power: 1.5,
+          floor: BOARD_TOP,
+          through: false,
+          budget: Math.round(settings.captureParticles * 0.5),
+          light: null,
         });
         this.effects.spawnSmoke(beyond, {
           count: 2,
@@ -2262,10 +2260,6 @@ export class SceneEngine {
 
     // Shot dead where it stood, before the shooter has moved a boot.
     await this.slay(victim, blow);
-
-    // The eye comes off the sights the moment the body is down: the frame opens
-    // out again while the lens pulls back, so the two reads as one movement.
-    this.closeScope();
 
     void this.tweens.to({
       duration: 0.45,
@@ -3021,51 +3015,6 @@ export class SceneEngine {
     });
   }
 
-  // ------------------------------------------------------------ the sight picture
-
-  /** The sights come up on a body: the UI closes the frame down onto it. */
-  private openScope(victim: PieceView, hold: number, tremor: number): void {
-    this.scopeVictim = victim;
-    this.scopeLive = true;
-    this.scopeTremor = tremor;
-    this.callbacks.onScope?.({ phase: "aim", hold, tremor });
-  }
-
-  /** The frame the shot leaves the barrel. */
-  private fireScope(): void {
-    if (!this.scopeLive) return;
-    this.callbacks.onScope?.({ phase: "fire", hold: 0, tremor: this.scopeTremor });
-  }
-
-  /**
-   * The eye comes off the sights. Safe to call at any time — including from the
-   * error path of a broken battle beat, which is exactly why it exists.
-   */
-  private closeScope(): void {
-    this.scopeVictim = null;
-    if (!this.scopeLive) return;
-    this.scopeLive = false;
-    this.callbacks.onScope?.(null);
-  }
-
-  /**
-   * Where the sighted body sits on screen, as 0..1 across the canvas. Read once
-   * a frame by the scope overlay so the reticle stays on the target while the
-   * lens is still punching in. False means nothing is sighted, or the target is
-   * behind the camera.
-   */
-  scopeTarget(out: ScreenPoint): boolean {
-    const victim = this.scopeVictim;
-    if (!victim || this.disposed) return false;
-    const projected = SCOPE_PROBE.copy(victim.container.position);
-    projected.y += 0.62;
-    projected.project(this.camera);
-    if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || projected.z > 1) return false;
-    out.x = (projected.x + 1) / 2;
-    out.y = (1 - projected.y) / 2;
-    return true;
-  }
-
   /** Where a world point sits across the screen, as a -1..1 stereo position. */
   private stereoPan(position: THREE.Vector3): number {
     const projected = position.clone().project(this.camera);
@@ -3111,6 +3060,29 @@ export class SceneEngine {
       speed: 2.1,
       life: 0.5,
     });
+  }
+
+  /**
+   * What a round finds when it arrives.
+   *
+   * The debris a hit throws has to be made of the *victim*, not of the shooter's
+   * powder — a ball into a Sun Empire obsidian idol cannot spray the same warm
+   * grit as a ball into a wool coat. So the material is read off the army the
+   * body belongs to, with the fully-armoured ranks answering as steel whatever
+   * livery they wear: the cuirassier's breastplate and the tower guardian's
+   * plate both spark instead of chipping.
+   */
+  private impactBody(victim: PieceView): ImpactBody {
+    const armoured = victim.kind === "n" || victim.kind === "r";
+    switch (this.factory.getSkins()[victim.color]) {
+      case "empire":
+        return armoured ? "plate" : "uniform";
+      case "sun":
+        // Obsidian and jade: it does not chip, it flakes into glass.
+        return armoured ? "plate" : "obsidian";
+      default:
+        return armoured ? "plate" : "marble";
+    }
   }
 
   /**
@@ -4133,7 +4105,6 @@ export class SceneEngine {
     this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored);
     this.closePromotionPicker();
-    this.closeScope();
     for (const piece of this.pieces.values()) piece.dispose();
     for (const piece of this.captured) piece.dispose();
     this.pieces.clear();
@@ -4142,6 +4113,7 @@ export class SceneEngine {
     this.spellLights.dispose();
     disposeStrikeAssets();
     disposeGunAssets();
+    disposeShatterAssets();
     this.board.dispose();
     this.hall.dispose();
     this.battlefield.dispose();

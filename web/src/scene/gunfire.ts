@@ -288,11 +288,32 @@ export interface MuzzleFlashOptions {
 }
 
 /**
- * The flash: a star of burning powder at the bore with a second, wider bloom
- * pushed a little way down the barrel line, so the flame reads as leaving the
- * gun rather than sitting on it. Snaps to full brightness on the first frame
- * and falls off fast — a slow muzzle flash always looks like a spell.
+ * The flash at the bore, in four stacked layers.
+ *
+ * It used to be two billboards fading out of a single sprite, which was legible
+ * next to the old glowing-dot projectile but is nowhere near enough now that a
+ * real sculpted round leaves the barrel drawn several calibres wide: the ball
+ * was arriving *brighter than the charge that sent it*. So:
+ *
+ * 1. **The star** — the ragged petal texture, billboarded, the silhouette of the
+ *    flame.
+ * 2. **The core** — a small disc of flat white stacked additively on top of the
+ *    star's own blown-out centre. Additive layers are how you get past opacity 1:
+ *    this is what clips to white, and therefore the only part the bloom pass
+ *    really takes hold of.
+ * 3. **The jet** — a cone of flame down the line of fire, *not* billboarded, so
+ *    the flash grows along the barrel instead of only swelling as a disc. This is
+ *    what tells the eye which way the round just went.
+ * 4. **The lead bloom** — the old forward puff, kept, a barrel's width out.
+ *
+ * The envelope matters as much as the size. Powder ignites in one frame, so the
+ * whole stack is held at *full* brightness for the first fifth of its life
+ * (`IGNITION`) and only then falls away — a flash that starts decaying on frame
+ * one never registers at 60fps. The last beat carries a flicker, because a
+ * charge burns out unevenly rather than dimming on a dial.
  */
+const IGNITION = 0.2;
+
 export async function spawnMuzzleFlash(
   scene: THREE.Object3D,
   tweens: { to: (spec: { duration: number; easing: (t: number) => number; onUpdate: (t: number) => void }) => Promise<void> },
@@ -300,6 +321,7 @@ export async function spawnMuzzleFlash(
   options: MuzzleFlashOptions,
 ): Promise<void> {
   const life = options.life ?? 0.11;
+  const size = options.size;
   const group = new THREE.Group();
   group.name = "muzzle_flash";
   group.position.copy(at);
@@ -316,41 +338,93 @@ export async function spawnMuzzleFlash(
       rotation: Math.random() * Math.PI,
     }),
   );
-  star.scale.setScalar(options.size);
+  star.scale.setScalar(size);
   star.renderOrder = 8;
   star.frustumCulled = false;
+
+  // Flat white over the star's centre. Small on purpose: its job is to blow the
+  // core out, not to widen the flame.
+  const core = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedBallMap(),
+      color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 1,
+    }),
+  );
+  core.scale.setScalar(size * 0.46);
+  core.position.copy(options.direction).multiplyScalar(size * 0.08);
+  core.renderOrder = 11;
+  core.frustumCulled = false;
 
   // The second bloom sits a barrel's width forward along the line of fire.
   const lead = new THREE.Sprite((star.material as THREE.SpriteMaterial).clone());
   (lead.material as THREE.SpriteMaterial).color.setHex(options.look.ball);
-  lead.position.copy(options.direction).multiplyScalar(options.size * 0.34);
-  lead.scale.setScalar(options.size * 0.62);
+  lead.position.copy(options.direction).multiplyScalar(size * 0.34);
+  lead.scale.setScalar(size * 0.62);
   lead.renderOrder = 9;
   lead.frustumCulled = false;
-  group.add(star, lead);
+
+  // The vented charge itself: a cone whose wide, bright end sits on the bore and
+  // whose tip runs out down the aim. The smear cone is authored tip-down -Z, so
+  // mapping +Z onto the *reverse* of the aim points the tip where the ball went.
+  const jet = new THREE.Mesh(
+    sharedSmearGeometry(),
+    new THREE.MeshBasicMaterial({
+      map: sharedSmearMap(),
+      color: options.look.flash,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+    }),
+  );
+  jet.quaternion.setFromUnitVectors(FORWARD, options.direction.clone().negate());
+  jet.scale.set(size * 0.8, size * 0.8, size * 1.5);
+  jet.renderOrder = 10;
+  jet.frustumCulled = false;
+
+  group.add(star, jet, lead, core);
 
   const starMaterial = star.material as THREE.SpriteMaterial;
   const leadMaterial = lead.material as THREE.SpriteMaterial;
+  const coreMaterial = core.material as THREE.SpriteMaterial;
+  const jetMaterial = jet.material as THREE.MeshBasicMaterial;
 
   try {
     await tweens.to({
       duration: life,
       easing: (t: number) => t,
       onUpdate: (t: number) => {
-        // Blooms open, then are gone: brightness falls off much faster than size.
-        const fade = Math.pow(1 - t, 2.1);
+        // Held wide open, then gone: brightness falls off much faster than size.
+        const burn = t <= IGNITION ? 1 : Math.pow(1 - (t - IGNITION) / (1 - IGNITION), 2.1);
+        // Uneven burn-out — a charge guttering, not a dimmer being turned down.
+        const flicker = 0.82 + 0.18 * Math.abs(Math.sin(t * 47));
+        const fade = burn * flicker;
         starMaterial.opacity = fade;
-        leadMaterial.opacity = fade * 0.85;
-        star.scale.setScalar(options.size * (1 + t * 0.5));
-        lead.scale.setScalar(options.size * (0.62 + t * 0.7));
+        leadMaterial.opacity = fade * 0.9;
+        // The core is the last thing to widen and the first thing to die, which
+        // is what makes the first frame read as a detonation.
+        coreMaterial.opacity = Math.pow(burn, 1.6);
+        jetMaterial.opacity = fade * 0.85;
+        star.scale.setScalar(size * (1 + t * 0.6));
+        lead.scale.setScalar(size * (0.62 + t * 0.8));
+        core.scale.setScalar(size * (0.46 + t * 0.22));
+        // The jet runs *out* as it dies rather than swelling: escaping gas.
+        jet.scale.set(size * (0.8 + t * 0.5), size * (0.8 + t * 0.5), size * (1.5 + t * 1.1));
         starMaterial.rotation += 0.12;
-        options.light?.set(group.position, fade * 22 * options.size);
+        options.light?.set(group.position, fade * 38 * size);
       },
     });
   } finally {
     options.light?.release();
     starMaterial.dispose();
     leadMaterial.dispose();
+    coreMaterial.dispose();
+    jetMaterial.dispose();
     group.removeFromParent();
     group.clear();
   }

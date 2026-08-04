@@ -161,9 +161,10 @@ The board owns the screen; every panel is either short, in a corner, or foldable
   one clapperboard icon. Pause is shown by a breathing play button instead of a large label.
 - **Cinema mode** (`C`) removes the overlay completely and leaves one small restore button, so
   a screen capture is board-only.
-- **The sight picture** (`src/ui/ScopeOverlay.tsx`) is the one overlay the *engine* raises: when
-  the Grande Armée's marshal levels his rifle, the frame closes down onto the body he is
-  shooting at (see [Gunpowder combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)).
+- **Nothing here is raised by the engine.** The marksman's rifle shot used to close a full-screen
+  sight picture over the whole interface; it was removed along with its extra lens punch-in, so a
+  rifle kill is watched in the hall like every other one (see
+  [Gunpowder combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)).
 
 ## Game modes
 
@@ -349,13 +350,13 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 
 | Clip | When it plays |
 | --- | --- |
-| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. One exception: the Grande Armée's marshal holds a **kneeling** stance — rifle up, scanning — which is also the kneel his strike fires from, so the shot grows out of the pose instead of restaging it |
+| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal **stands at the ready**, rifle lowered: he used to hold a kneeling stance for the entire game, which read as a man permanently stuck in cover, so the kneel moved into the one place it is worth something — his `aim` |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way. The clip's own stride length is **measured** rather than assumed (`gaitCycle()`), because the generator hands back anything from one cycle (`spear-walk`, 1.13 s) to three (`casual-walk`, 4.23 s). It must still be a *walk*: a 0.5 s sprint cycle stretched across a single square reads as juddering on the spot, which is why the line infantry advances on the musket-across-the-body walk instead of the rifle charge that sits on the same rig |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
 | `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the **firing drill** (the marshal's is a drop onto one knee), played at its own readable length, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
 | `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's four gunpowder ranks carry one; the marshal reloads still kneeling, the battery at the muzzle |
-| `aim` | Looping **sight picture** held before a shot: the weapon comes up and stays on the body while the shooter settles. Napoléon (pistol levelled) and the line infantry (musket into the shoulder, barrel tracking the man) carry one; the marshal and the battery aim through their own drill instead — his kneel and their gun-laying already *are* the aim |
+| `aim` | Looping **sight picture** held before a shot: the weapon comes up and stays on the body while the shooter settles. Napoléon (pistol levelled), the line infantry (musket into the shoulder, barrel tracking the man) and the marshal (**down onto one knee**, rifle up and scanning) carry one; only the battery has none — laying the gun already *is* its aim |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -485,16 +486,19 @@ still closes with the sabre. The beat is:
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
    or a linstock is heard (`audio.gunLock`) as the barrel comes round.
 2. **Taking aim.** `PieceView.playAim()` loops the sight picture for `GUNS[kind].aim` seconds
-   (0.3–0.5 s): the weapon is brought up and *held* on the body. A rank with no aim clip leans
-   into the shot by hand instead, so a gunner is always visibly aiming before anything is fired.
+   (0.3–0.62 s): the weapon is brought up and *held* on the body. For the marshal this is also the
+   drop onto one knee — his hold is the longest on the board so the knee actually reaches the stone
+   before the drill starts. A rank with no aim clip leans into the shot by hand instead, so a gunner
+   is always visibly aiming before anything is fired.
 3. **The drill.** The strike clip is then played at its own readable length —
    `GUNS[kind].drill = { seconds, impact }` — and the shot leaves on the frame the hammer falls
    (`impact`, 0.5–0.64 of the clip) rather than at the swordsman's default 0.42. This matters: at
    the default *length* the marshal's kneel-level-fire drill was over in a third of a second and
-   the shot read as a flash appearing out of a stance. His is now the longest beat on the board
-   (2.1 s, firing at 0.64). Because the muzzle marker is read out of the live pose, the kneeling
-   shot leaves the barrel at the height the knee put it, not at standing height.
-4. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
+   the shot read as a flash appearing out of a stance. His is still the longest beat on the board
+   (1.7 s, firing at 0.6) — it was 2.1 s only because it had a full-screen sight picture to fill.
+   Because the muzzle marker is read out of the live pose, the kneeling shot leaves the barrel at
+   the height the knee put it, not at standing height.
+4. `spawnMuzzleFlash()` detonates the charge at the barrel mouth (see *The flash at the bore*),
    `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
    smoothbore, pale ash grey for the rifle (see below) — and `audio.gunshot()` fires the report.
 5. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
@@ -503,9 +507,11 @@ still closes with the sabre. The beat is:
    round is the only one that flies a true line.
 6. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
    by a thud into the body), then flash, sparks, tile strike, camera kick, and for the field gun a
-   wave rolling out across the stone plus a long aftershock. **Solid shot does not stop in the
-   man**: a second short flight carries the iron a tile and a half past him and skips it off the
-   stone, with its own thud, sparks and dust.
+   wave rolling out across the stone plus a long aftershock. The body **breaks open** where the round
+   went in — a punch ring square to the flight line, a cone of spall thrown back at the shooter and a
+   field of tumbling chips made of the victim's own material (see *The moment the round arrives*).
+   **Solid shot does not stop in the man**: a second short flight carries the iron a tile and a half
+   past him and skips it off the stone, throwing stone chips and a ricochet spark shower.
 7. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
    the barrel is charged again before `glide()` walks the shooter onto the cleared square.
 
@@ -551,9 +557,43 @@ second. Rendered honestly it is one pixel for one frame — which is exactly why
   a shot has no blur before it has moved. This is the thing the eye actually tracks.
 
 On top of that a small **glint** sprite carries caught torchlight so the metal registers against the
-dark far wall, and the round now spawns *clear of the bore* (`min(0.34, flash * 0.42)` down the line
-of fire) instead of inside its own muzzle flash and powder bank. The orange glow sprite, the
+dark far wall, and the round now spawns *clear of the bore* (`min(0.42, muzzleFlare(gun) * 0.44)` down
+the line of fire) instead of inside its own muzzle flash and powder bank. The orange glow sprite, the
 borrowed point light and the dragged-along wake still belong to the iron alone.
+
+### The flash at the bore
+
+The flame has to be **sized off the round it launches**, which is why `GUNS[kind].flare` is a *ratio*
+(4.4–6.0) rather than a width in world units. `muzzleFlare(gun) = ball × AMMUNITION[ammo].gauge ×
+flare` is the single source of truth for everything at the muzzle: the flash, the ember shower, the
+reach of the borrowed point light, and how far clear of the bore the ball is spawned. When the flash
+was authored independently of the ammunition the two drifted apart the moment the rounds became
+sculpts drawn 1.7–2.6× the bore — the projectile ended up brighter and wider than the charge that
+sent it, which reads as a ball being dropped rather than fired. Tying both to one number means a
+change to a round's gauge can never leave its flash behind. Period flame is roughly 4–8 bore
+diameters, so the clean-burning rifle sits at the bottom of the range (4.9) and the field gun at the
+top (6.0).
+
+The flash is four layers deep, because a single additive sprite is capped at opacity 1 and simply
+cannot be made brighter:
+
+1. **The star** — `muzzleFlashTexture()`, billboarded: thirteen ragged petals reaching to the sprite
+   edge plus three long primary jets, over a halo that holds **flat white out to a fifth of its
+   radius**. That plateau is the point: the bloom pass only takes hold of what already clips at 1, so
+   a flash built as a polite gradient blooms on a handful of pixels and reads as a dull spark.
+2. **The core** — a small disc of pure white stacked additively over the star's own blown-out centre.
+   Additive layering is the only way past opacity 1. It is the last thing to widen and the first to
+   die, which is what makes frame one read as a detonation.
+3. **The jet** — the smear cone, *not* billboarded, its bright wide end on the bore and its tip
+   running out along the aim. The flash therefore grows *along the barrel* instead of only swelling as
+   a disc, and it tells the eye which way the round just went.
+4. **The lead bloom** — a second, warmer puff a barrel's width down the line of fire.
+
+The envelope carries as much as the size. Powder ignites in one frame, so the whole stack is **held at
+full brightness for the first fifth of its life** (`IGNITION`) and only then falls away on a `(1-t)²·¹`
+curve — a flash that starts decaying on frame one never registers at 60 fps. The dying beat carries a
+flicker (`0.82 + 0.18·|sin|`) because a charge guts out unevenly rather than dimming on a dial, and
+the borrowed light burns at `fade × 38 × flame` over a distance that grows with the charge.
 
 The wander is not decoration. A ball rattling down an unrifled barrel leaves it turning, and a
 turning sphere curves — which is exactly why a musket could not be trusted at a hundred paces.
@@ -567,6 +607,53 @@ as the nose instead of guessing a yaw constant, normalises it to one unit nose-t
 it. Until a GLB lands, that kind is turned procedurally to the same contract: **nose along +Z,
 centred, one unit long**, so a shot only ever scales it by its gauge — and the first shot of a game
 is never a blank.
+
+### The moment the round arrives
+
+A shot that ends in a warm sprite puff is a spell, not a kill. `src/scene/shatter.ts` replaces that
+beat with something that visibly **breaks**, and it is deliberately geometry rather than billboards —
+the whole point of the moment is that the body came apart. Four things fire on the same frame, in the
+order the eye reads them, and all of it runs inside **two instanced draw calls** on the tween clock:
+
+1. **The punch ring** — a disc of light square to the line of flight (oriented, not billboarded),
+   snapped open on the surface it struck and gone within 0.18 s. The only non-physical part; it
+   exists to say *where* on the body the round went in.
+2. **Sparks** — real stretched geometry, not dots. Each spark is a four-sided sliver pointed along
+   its **own velocity**, so it draws a streak that turns as it flies and whose length tracks its
+   speed: a long line while it is quick, a dot once it is spent. They leave in a cone thrown *back*
+   at the shooter, because spall comes off the struck face; they cool white → orange → dull red on
+   their own clocks through per-instance colour; they **gutter** rather than fade; they skitter off
+   the flagstones with their run intact and their lift gone; and roughly one in six is given a much
+   longer life so the shower never stops like a switch.
+3. **Fragments** — chips of whatever the victim is made of: crushed tetrahedra with per-instance
+   colour and value scatter, tumbling on their own axes under gravity, bouncing off `BOARD_TOP` with
+   material-specific restitution plus tangential friction and a knocked-down tumble, coming to rest
+   lying on the stone, then pulled under over the last quarter of their life so the board is never
+   left littered.
+4. **Dust** — the haze the caller layers on top, tinted by `impactDust(body)` so it is the colour of
+   what just broke instead of the colour of the shooter's powder.
+
+**The debris is made of the victim, not of the shot.** `impactBody()` maps army × rank onto a recipe,
+because a ball into an obsidian idol cannot spray the same grit as a ball into a wool coat:
+
+| Body | Who | What comes off |
+| --- | --- | --- |
+| `marble` | Ivory Kingdom ranks | Pale chips and bright dust, moderate sparks |
+| `obsidian` | Sun Empire ranks | The most fragments and the widest spread — glass *flakes*, so long razor slivers (3.4× sliver), near-black with a jade fleck and a jade-green spark cool-down |
+| `plate` | cuirassier + guardians of any army | Steel spall, few chips, **the brightest spark shower on the board** (30 at power 1, 10.5 m/s), almost no dust |
+| `uniform` | Grande Armée coats | Navy wool, buff leather, gilt lace and shako brass; slow, absorbing, lands where it falls (0.16 restitution), barely any sparks |
+| `flagstone` | the floor of the hall | Stone chips and a long ricochet shower that skitters away across the tiles |
+
+**How hard it breaks comes from the round**, not from the rank: `AMMUNITION[kind].shatter` scales
+count, speed and size together — `0.72` for a pistol ball, `1` for the musket ball, `1.24` for the
+Minié (lighter, but arriving far faster and still spinning), `2.5` for six pounds of iron. And
+`.through` decides whether there is exit spall as well as entry: soft lead at black-powder velocity
+flattens and stops, while the spun conical bullet and the solid shot both come out the other side and
+throw a second, wider, slower cone the way they were already going. The round shot's skip off the
+stone a tile and a half beyond the body gets its own `flagstone` shatter aimed down into the floor.
+
+Instance counts are capped off `captureParticles`, so the whole effect scales with the graphics
+preset, and the hole throws a borrowed point light for a fifth of a second on `postFx` presets only.
 
 **Black powder is recorded, not only synthesised.** `GUN_AUDIO_URLS` holds one take per barrel
 (pistol, musket, rifle, cannon) plus the ball's impact; they stream in behind the music like the
@@ -605,34 +692,21 @@ behind the report with the wheels landing after it, and the hall takes the shock
 beat *after* the shot rather than with it. Every voice is synthesised by `calibre` in one mixer
 method — no assets, so a volley never waits on a download.
 
-**The rifle is the only barrel with sights, so it is the only one fired from behind them.** For a
-bishop capture the engine raises a sight picture over the whole interface (`SceneCallbacks.onScope`
-→ `src/ui/ScopeOverlay.tsx`, `.mc-scope` in `medieval.css`): the hall goes dark around a narrow
-tube on the target, a brass bezel and a two-wire reticle with range ticks settle over it, the
-shooter's held breath drifts under the crosshair, **his hands wander off the mark by an amount
-rolled for that shot**, the report throws the whole picture up off the mark and walks it back down,
-and the frame opens out again on the frame the body drops — in step
-with the lens pulling back out of its 8.5° punch-in. The reticle **tracks the body**: the overlay
-asks `SceneEngine.scopeTarget()` once a frame and writes the result into two custom properties on
-the DOM, so it stays on the target while the camera is still moving without re-rendering React or
-touching the animation loop. Everything animates on `transform` and `opacity` only — no filters,
-no backdrop blur — so a software rasteriser is never asked to composite a full-screen effect
-mid-fight, and `prefers-reduced-motion` keeps the tube but drops the breath, the tremor and the
-recoil. The sight picture is skipped on the flat tactical map, and `closeScope()` runs from the
-battle beat's error path too, so a broken effect can never leave the frame shut.
+**The marksman is watched, not looked through.** The rifle shot used to be staged from behind a
+full-screen sight picture (`SceneCallbacks.onScope` → `ScopeOverlay.tsx`, `.mc-scope`): a dark tube
+around the body, a brass two-wire reticle tracking it, a per-shot hand tremor rolled from range, a
+recoil that threw the picture off the mark — all of it sitting on top of the hardest lens punch-in
+on the board (8.5°). All of it is gone, callbacks and CSS included, and his framing is now the
+line infantry's (5.5°).
 
-**Hand tremor is a rolled variable, not a canned wobble.** `handTremor()` scores each shot 0..1
-from the range being asked of the man — a body 1–2 squares off is held almost dead still, one at
-the far corner of the hall floats badly — plus up to `0.22` of luck, so the same shot is never
-unsteady in the same way twice. That figure rides in `ScopeState.tremor` and the overlay spends it
-on three things: the reticle's wander (three incommensurable sines per axis, up to 2.6 vmin of
-drift and 0.9° of cant, so nothing repeats inside a held breath), the **width of the breath
-animation** itself (`--scope-breath`, so a long shot visibly heaves more than a point-blank one),
-and the pacing — the hands arrive unsettled (×1.35), steady onto the mark over 340 ms, then drift
-worse and worse as the breath runs out (`(t / hold) ^ 1.7`), and stand fully down over 300 ms once
-the shot goes, because from there the recoil owns the picture. Like the tracking, it is written as
-custom properties onto one DOM node inside the same `requestAnimationFrame` loop — zero React
-re-renders and zero extra work for the animation loop.
+The reason is that the two effects were competing for the same moment. The overlay took the kill
+*out* of the hall — you stopped watching a man on a battlefield and started watching an interface
+— and the drill had to be stretched to 2.1 s to give the tube something to fill. What reads as a
+marksman is far simpler: **he drops onto one knee to take the shot, and only then.** That kneel used
+to be his permanent stance (a figure crouched behind cover for an entire game, which is why nothing
+about the shot looked like an act of aiming); it now lives in his `aim` clip, so the sequence is
+stand → kneel → level → fire → reload on the knee → back on his feet, all of it in world space where
+the rest of the hall is.
 
 **The gun goes where the arms go.** A prop parented to a hand bone at a fixed body-space angle
 suits a sabre worn point-up, but it leaves a rifle standing straight up through an aiming clip.

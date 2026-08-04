@@ -7,17 +7,10 @@ import type { Faction, LedgerMove } from "../core/types";
 import { Clapperboard } from "lucide-react";
 import { ARENA_LOOKS, DEFAULT_ARENA, type ArenaTheme } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
-import {
-  SceneEngine,
-  type CameraPreset,
-  type ScopeState,
-  type ScreenPoint,
-  type ShowcaseCamera,
-} from "../scene/sceneEngine";
+import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { MainMenu, type MatchConfig } from "./MainMenu";
-import { ScopeOverlay } from "./ScopeOverlay";
 import { SettingsPanel, type GameSettings } from "./SettingsPanel";
 import { useGameSnapshot } from "./useGameSnapshot";
 import "./medieval.css";
@@ -127,8 +120,6 @@ export function GameShell() {
   const [cinema, setCinema] = useState(false);
   /** How the camera behaves during a showcase duel: held, orbiting or following. */
   const [showcaseCamera, setShowcaseCamera] = useState<ShowcaseCamera>("follow");
-  /** The marksman's sight picture, mirrored from the engine's gunpowder beat. */
-  const [scope, setScope] = useState<ScopeState | null>(null);
 
   // ------------------------------------------------------------ boot the scene
   useEffect(() => {
@@ -162,7 +153,6 @@ export function GameShell() {
           onContextLost: () => setContextLost(true),
           onCameraFlipped: (flipped) => setCameraFlipped(flipped),
           onTacticalView: (active) => setTactical(active),
-          onScope: (next) => setScope(next),
           onRenderFallback: (message, safe) => {
             if (safe) setSettings((current) => ({ ...current, safeMode: true }));
             setNotice(message);
@@ -386,9 +376,6 @@ export function GameShell() {
     setSettings((current) => (current.arena === theme ? current : { ...current, arena: theme }));
   }, []);
 
-  /** Read by the scope overlay every frame; never re-renders React. */
-  const trackScope = useCallback((out: ScreenPoint) => engineRef.current?.scopeTarget(out) ?? false, []);
-
   const handlePreviewMove = useCallback((move: LedgerMove | null) => {
     engineRef.current?.previewMove(move ? { from: move.from, to: move.to } : null);
   }, []);
@@ -491,9 +478,6 @@ export function GameShell() {
             <Clapperboard size={15} />
           </button>
         ) : null}
-
-        {/* Above the interface: looking through the sights dims everything. */}
-        <ScopeOverlay state={scope} track={trackScope} />
 
         {promotionOpen ? (
           <div className="mc-fade pointer-events-none absolute inset-x-0 top-1/2 flex justify-center">

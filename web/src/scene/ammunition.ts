@@ -80,6 +80,20 @@ export interface AmmoSpec {
   glint: number;
   /** Air dragged along behind a heavy round, in bore diameters. 0 for small arms. */
   wake: number;
+  /**
+   * How violently the round breaks what it hits, as a multiple of a musket
+   * ball. Drives the debris field at the far end — the spark shower, the number
+   * of chips thrown and the size of the punch ring. This is mass times speed,
+   * not spectacle: a pistol ball is under one, a six-pounder is well over two.
+   */
+  shatter: number;
+  /**
+   * Whether the round carries through the body instead of staying in it. Soft
+   * lead at black-powder velocity flattens and stops; a spun conical bullet and
+   * a solid iron shot both come out the other side, and that is what puts spall
+   * on the far side of the man as well as the near one.
+   */
+  through: boolean;
 }
 
 /**
@@ -99,6 +113,8 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     streak: { color: 0xc9ced6, opacity: 0.34, stretch: 7 },
     glint: 0.4,
     wake: 0,
+    shatter: 0.72,
+    through: false,
   },
   // .69 Charleville ball. The heaviest thing the line carries and the least
   // accurate round on the board.
@@ -113,6 +129,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     streak: { color: 0xc2c7ce, opacity: 0.4, stretch: 8.5 },
     glint: 0.42,
     wake: 0,
+    // The fattest small-arms round on the board, and soft enough to stay in.
+    shatter: 1,
+    through: false,
   },
   // Rifled: conical, spun hard, and the only round that goes exactly where it
   // is pointed.
@@ -129,6 +148,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     streak: { color: 0xdde1e7, opacity: 0.46, stretch: 11 },
     glint: 0.5,
     wake: 0,
+    // Lighter than a musket ball but arriving far faster and still spinning.
+    shatter: 1.24,
+    through: true,
   },
   // Solid iron, out of a 6-pounder. Slow enough to watch, hot enough to see.
   roundShot: {
@@ -143,6 +165,10 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     streak: { color: 0xff9a52, opacity: 0.52, stretch: 6 },
     glint: 0.3,
     wake: 2.4,
+    // Six pounds of iron. Nothing on the board survives being in its way, and
+    // it is still travelling once it is through.
+    shatter: 2.5,
+    through: true,
   },
 };
 
