@@ -431,6 +431,143 @@
   }
 }
 
+/* ------------------------------------------------------------ field tally
+
+   A muster roll under the turn panel: losses and time on the field for each
+   army. It is read, never touched, so it stays click-through — the board keeps
+   every tap in that corner. */
+
+.mc-tally {
+  --mc-tally-accent: rgba(216, 177, 99, 0.28);
+  width: 11.2rem;
+  padding: 0.34rem 0.5rem 0.4rem;
+  border-radius: 3px;
+  animation: mc-fade 420ms ease both;
+}
+
+.mc-tally-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.46rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #9b8659;
+  padding-bottom: 0.28rem;
+  border-bottom: 1px solid rgba(138, 101, 34, 0.3);
+}
+
+.mc-tally-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  letter-spacing: 0.1em;
+  color: #cbb68d;
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-tally-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.22rem 0.16rem 0.22rem 0;
+  opacity: 0.62;
+  transition:
+    opacity 220ms ease,
+    background 220ms ease;
+}
+
+.mc-tally-row + .mc-tally-row {
+  border-top: 1px solid rgba(138, 101, 34, 0.16);
+}
+
+/* The army on the move is the one whose meter is running, so it is lit and
+   carries a hairline in its own colour on the leading edge. */
+.mc-tally-row[data-live] {
+  opacity: 1;
+  background: linear-gradient(90deg, var(--mc-tally-accent) 0%, rgba(0, 0, 0, 0) 78%);
+  box-shadow: inset 2px 0 0 var(--mc-tally-accent);
+}
+
+.mc-tally-row[data-faction="w"] {
+  --mc-tally-accent: rgba(72, 132, 214, 0.34);
+}
+
+.mc-tally-row[data-faction="b"] {
+  --mc-tally-accent: rgba(200, 74, 44, 0.34);
+}
+
+.mc-tally-name {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.56rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #e3d2ad;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-tally-lost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  min-width: 1.6rem;
+  justify-content: flex-end;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.68rem;
+  color: #dfa08d;
+  font-variant-numeric: tabular-nums;
+  animation: mc-tally-toll 700ms cubic-bezier(0.2, 1.5, 0.35, 1) both;
+}
+
+.mc-tally-time {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.7rem;
+  min-width: 2.5rem;
+  text-align: right;
+  color: #f2e2bd;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rings the bell on a fresh burial: the count swells and flares ember once. */
+@keyframes mc-tally-toll {
+  0% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+  35% {
+    transform: scale(1.32);
+    text-shadow: 0 0 12px rgba(226, 108, 74, 0.85);
+  }
+  100% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .mc-tally {
+    width: 10.2rem;
+    padding: 0.28rem 0.42rem 0.32rem;
+  }
+
+  .mc-tally-row {
+    padding-top: 0.18rem;
+    padding-bottom: 0.18rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-tally,
+  .mc-tally-lost {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------------------ animation */
 
 @keyframes mc-rise {

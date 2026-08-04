@@ -389,6 +389,9 @@ export function GameShell() {
     );
   }, []);
 
+  /** Live per-side clock for the tally, read on its own tick. */
+  const getElapsed = useCallback(() => controller.getElapsed(), [controller]);
+
   const handlePreviewMove = useCallback((move: LedgerMove | null) => {
     engineRef.current?.previewMove(move ? { from: move.from, to: move.to } : null);
   }, []);
@@ -477,6 +480,7 @@ export function GameShell() {
             showcaseCamera={showcaseCamera}
             onShowcaseCamera={handleShowcaseCamera}
             onToggleCinema={() => setCinema(true)}
+            getElapsed={getElapsed}
           />
         ) : null}
 

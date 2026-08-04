@@ -104,6 +104,8 @@ cd web && bun install && bun run dev
 - **Auto-detected graphics presets** (Low → Ultra) with an automatic step-down if the
   measured frame rate stays low, plus WebGL context-loss recovery.
 - **Chess clocks**, undo, resign, flip board, copyable PGN, captured tray with material score.
+- **Field tally** in the top-left corner: figures lost and time on the field for each army, ticking
+  live even in an untimed duel.
 
 ## Quick start
 
@@ -157,11 +159,25 @@ The board owns the screen; every panel is either short, in a corner, or foldable
 
 | Region | What lives there |
 | --- | --- |
-| Top left | Whose turn it is, the thinking pulse, the check banner, the showcase duel counter |
+| Top left | Whose turn it is, the thinking pulse, the check banner, the showcase duel counter — and the field tally under it |
 | Top right | Clocks, then the icon rail — take back, resign, new duel, sound, fullscreen, flip, tactical, camera menu, settings |
 | Right, under the bar | Spoils: both captured trays and the material score (desktop only; it folds into the chronicle on narrow screens) |
 | Bottom left | The chronicle sigil — a corner button with a move counter that unfurls the record on demand (`H`) |
 | Bottom right | The showcase rail, only during a showcase duel |
+
+- **The field tally** (`.mc-tally`) sits directly under the turn slate: one row per army with its
+  crest, the number of figures it has **lost**, and how long it has **been on the field**, plus the
+  battle's total length in the header. The army on the move is the lit row — full opacity, a wash
+  and a hairline in its own azure/ember — so the panel says whose meter is running without a second
+  label. A fresh burial swells and flares its loss count once (`mc-tally-toll`). It is read, never
+  touched: the panel is `pointer-events-none`, so every tap in that corner still reaches the board.
+- **Elapsed time is not the clock.** `ClockState` counts *down* and only exists when a clock was
+  chosen; `ElapsedState` always accumulates, so an untimed duel still reports how long each side
+  has spent. `GameController` charges wall time to whoever is on the move and re-points the meter
+  on every event that changes who is thinking — a played move, a pause, an undo, the end of the
+  battle — so a paused showcase charges nobody. The tally reads it **live** through
+  `controller.getElapsed()` on its own 500 ms tick rather than off the snapshot: the core only
+  publishes on real events, and a passing second must not re-render the whole interface.
 
 - **Tooltips** (`src/ui/Tooltip.tsx`) replace the browser's native `title`, which appears too
   late to explain an icon. Each bubble carries the control's name, one sentence of
@@ -310,7 +326,7 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         ├── ui/             React + CSS overlay
         │   ├── GameShell.tsx       phases, settings, attract mode, keyboard shortcuts
         │   ├── MainMenu.tsx        mode / colour / strength / clock / muster selection
-        │   ├── Hud.tsx             top bar, spoils, chronicle sigil, showcase rail
+        │   ├── Hud.tsx             top bar, field tally, spoils, chronicle sigil, showcase rail
         │   ├── Tooltip.tsx         themed tooltip for the icon-only controls
         │   ├── MoveLedger.tsx      the chronicle: move list, PGN, hover preview
         │   ├── Muster.tsx          army + battleground pickers, and their locked in-match view

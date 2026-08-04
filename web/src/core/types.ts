@@ -50,6 +50,20 @@ export interface ClockState {
   blackMs: number;
 }
 
+/**
+ * Wall time each army has spent on the board, in milliseconds.
+ *
+ * Independent of {@link ClockState}: the countdown is optional and runs *down*,
+ * while this always accumulates so the field tally can report how long the
+ * battle has lasted even in an untimed duel.
+ */
+export interface ElapsedState {
+  whiteMs: number;
+  blackMs: number;
+  /** Both sides added together — the length of the battle so far. */
+  totalMs: number;
+}
+
 export interface CapturedPiece {
   kind: PieceKind;
   /** Colour of the piece that was captured. */
@@ -102,6 +116,8 @@ export interface GameSnapshot {
   materialDiff: number;
   lastMove: { from: SquareId; to: SquareId } | null;
   clock: ClockState;
+  /** Time spent per side, counted whether or not the chess clock is enabled. */
+  elapsed: ElapsedState;
   canUndo: boolean;
   /** Showcase settings when `mode === "demo"`. */
   demo: DemoOptions | null;

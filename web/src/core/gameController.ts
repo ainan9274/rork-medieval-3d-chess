@@ -7,6 +7,7 @@ import {
   type ClockState,
   type DemoOptions,
   type Difficulty,
+  type ElapsedState,
   type Faction,
   type GameMode,
   type GameResult,
@@ -75,6 +76,11 @@ export class GameController extends Emitter<ControllerEvents> {
     clockMinutes: null,
   };
   private clock: ClockState = { enabled: false, initialMs: 0, whiteMs: 0, blackMs: 0 };
+  /** Wall time already charged to each army, in ms. */
+  private elapsed: Record<Faction, number> = { w: 0, b: 0 };
+  /** Army the meter is currently charging, or null while idle / paused / over. */
+  private timingSide: Faction | null = null;
+  private timingSince = 0;
   private result: GameResult | null = null;
   private thinking = false;
   private busy = false;
@@ -87,6 +93,34 @@ export class GameController extends Emitter<ControllerEvents> {
 
   getSnapshot(): GameSnapshot {
     return this.snapshot;
+  }
+
+  /**
+   * Live per-side elapsed time. Read directly (rather than off the snapshot) by
+   * the tally panel, which ticks on its own so a running second never forces the
+   * whole interface to re-render.
+   */
+  getElapsed(): ElapsedState {
+    const live: Record<Faction, number> = { w: this.elapsed.w, b: this.elapsed.b };
+    if (this.timingSide !== null) {
+      live[this.timingSide] += Math.max(0, performance.now() - this.timingSince);
+    }
+    return { whiteMs: live.w, blackMs: live.b, totalMs: live.w + live.b };
+  }
+
+  /**
+   * Charges the time since the last sync to whoever was on the move, then
+   * re-points the meter at whoever is on the move now. Called on every event
+   * that changes who is thinking: a played move, a pause, an undo, the end of
+   * the battle.
+   */
+  private syncElapsed(): void {
+    const now = performance.now();
+    if (this.timingSide !== null) {
+      this.elapsed[this.timingSide] += Math.max(0, now - this.timingSince);
+    }
+    this.timingSince = now;
+    this.timingSide = this.status === "playing" && !this.paused ? (this.chess.turn() as Faction) : null;
   }
 
   getBoard(): { square: SquareId; kind: PieceKind; color: Faction }[] {
@@ -156,6 +190,9 @@ export class GameController extends Emitter<ControllerEvents> {
       whiteMs: ms,
       blackMs: ms,
     };
+    this.elapsed = { w: 0, b: 0 };
+    this.timingSide = null;
+    this.syncElapsed();
     this.emit("reset", options);
     this.publish();
     this.startClock();
@@ -172,6 +209,7 @@ export class GameController extends Emitter<ControllerEvents> {
     this.busy = false;
     this.paused = false;
     this.releasePause();
+    this.syncElapsed();
     this.publish();
   }
 
@@ -186,8 +224,10 @@ export class GameController extends Emitter<ControllerEvents> {
     this.paused = paused;
     if (paused) {
       this.stopClock();
+      this.syncElapsed();
     } else {
       this.releasePause();
+      this.syncElapsed();
       this.startClock();
     }
     this.publish();
@@ -265,6 +305,10 @@ export class GameController extends Emitter<ControllerEvents> {
   private async commit(move: Move): Promise<void> {
     const generation = this.generation;
     this.busy = true;
+    // The move is already applied, so this charges the thinking time to the side
+    // that just played and starts the meter on the reply — the same accounting
+    // the countdown clock uses.
+    this.syncElapsed();
 
     const capture = this.buildCapture(move);
     const rook = this.buildRookTrip(move);
@@ -363,6 +407,7 @@ export class GameController extends Emitter<ControllerEvents> {
     this.thinking = false;
     this.busy = false;
     this.result = result;
+    this.syncElapsed();
     this.publish();
     this.emit("gameover", result);
     this.scheduleDemoRematch();
@@ -402,6 +447,7 @@ export class GameController extends Emitter<ControllerEvents> {
     }
     this.thinking = false;
     this.busy = false;
+    this.syncElapsed();
     this.publish();
     return true;
   }
@@ -550,6 +596,7 @@ export class GameController extends Emitter<ControllerEvents> {
       materialDiff: diff,
       lastMove: last ? { from: last.from, to: last.to } : null,
       clock: { ...this.clock },
+      elapsed: this.getElapsed(),
       canUndo:
         verbose.length > 0 &&
         !this.thinking &&

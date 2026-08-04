@@ -17,14 +17,16 @@ import {
   RotateCw,
   ScrollText,
   Settings as SettingsIcon,
+  Skull,
   Swords,
+  Timer,
   Video,
   Volume2,
   VolumeX,
   X,
 } from "lucide-react";
 
-import type { GameSnapshot, LedgerMove, PieceKind } from "../core/types";
+import type { ElapsedState, Faction, GameSnapshot, LedgerMove, PieceKind } from "../core/types";
 import type { CameraPreset, ShowcaseCamera } from "../scene/sceneEngine";
 import { Crest, Hourglass, pieceGlyph } from "./Heraldry";
 import { MoveLedger } from "./MoveLedger";
@@ -53,6 +55,8 @@ interface HudProps {
   showcaseCamera: ShowcaseCamera;
   onShowcaseCamera: (mode: ShowcaseCamera) => void;
   onToggleCinema: () => void;
+  /** Live per-side elapsed time, read on the tally's own tick. */
+  getElapsed: () => ElapsedState;
 }
 
 const DEMO_SPEEDS: { label: string; value: number }[] = [
@@ -89,6 +93,20 @@ function formatClock(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Elapsed time reads the other way round from the countdown: it floors, so the
+ * meter shows 0:00 for the first second instead of jumping straight to 0:01, and
+ * it grows an hours field only once a battle actually runs that long.
+ */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const seconds = total % 60;
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  const mm = hours > 0 ? minutes.toString().padStart(2, "0") : minutes.toString();
+  return `${hours > 0 ? `${hours}:` : ""}${mm}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export function Hud({
   snapshot,
   muted,
@@ -112,6 +130,7 @@ export function Hud({
   showcaseCamera,
   onShowcaseCamera,
   onToggleCinema,
+  getElapsed,
 }: HudProps) {
   const [chronicleOpen, setChronicleOpen] = useState(false);
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
@@ -219,36 +238,40 @@ export function Hud({
       {/* Top bar */}
       {/* Padding (including the notch/home-bar insets) lives in `.mc-hud-top`. */}
       <div className="mc-hud-top pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3">
-        <div className="mc-hud-status mc-slate mc-goldleaf pointer-events-auto flex items-center gap-3 px-3 py-2.5">
-          <Crest faction={snapshot.turn} size={26} active />
-          <div>
-            <p className="mc-display text-[0.58rem] tracking-[0.3em] text-[#a89268]">
-              {demo
-                ? `Showcase · duel ${snapshot.demoRound}`
-                : snapshot.status === "over"
-                  ? "Battle ended"
+        <div className="flex min-w-0 flex-col items-start gap-1.5">
+          <div className="mc-hud-status mc-slate mc-goldleaf pointer-events-auto flex items-center gap-3 px-3 py-2.5">
+            <Crest faction={snapshot.turn} size={26} active />
+            <div>
+              <p className="mc-display text-[0.58rem] tracking-[0.3em] text-[#a89268]">
+                {demo
+                  ? `Showcase · duel ${snapshot.demoRound}`
+                  : snapshot.status === "over"
+                    ? "Battle ended"
+                    : snapshot.thinking
+                      ? "Council of war"
+                      : "To move"}
+              </p>
+              <p className="mc-display text-sm text-[#f2e2bd]">
+                {snapshot.status === "over"
+                  ? "—"
                   : snapshot.thinking
-                    ? "Council of war"
-                    : "To move"}
-            </p>
-            <p className="mc-display text-sm text-[#f2e2bd]">
-              {snapshot.status === "over"
-                ? "—"
-                : snapshot.thinking
-                  ? "Thinking…"
-                  : snapshot.turn === "w"
-                    ? "Ivory"
-                    : "Obsidian"}
-            </p>
+                    ? "Thinking…"
+                    : snapshot.turn === "w"
+                      ? "Ivory"
+                      : "Obsidian"}
+              </p>
+            </div>
+            {snapshot.inCheck && snapshot.status === "playing" ? (
+              <span className="mc-danger-flash mc-display rounded-sm border border-[#a8342a] px-2 py-1 text-[0.6rem] tracking-[0.24em] text-[#ff9a8a]">
+                CHECK
+              </span>
+            ) : null}
+            {snapshot.thinking ? (
+              <span className="mc-pulse ml-1 h-2 w-2 rounded-full bg-[#d8b163]" aria-hidden="true" />
+            ) : null}
           </div>
-          {snapshot.inCheck && snapshot.status === "playing" ? (
-            <span className="mc-danger-flash mc-display rounded-sm border border-[#a8342a] px-2 py-1 text-[0.6rem] tracking-[0.24em] text-[#ff9a8a]">
-              CHECK
-            </span>
-          ) : null}
-          {snapshot.thinking ? (
-            <span className="mc-pulse ml-1 h-2 w-2 rounded-full bg-[#d8b163]" aria-hidden="true" />
-          ) : null}
+
+          <FieldTally snapshot={snapshot} getElapsed={getElapsed} />
         </div>
 
         <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5">
@@ -598,6 +621,85 @@ export function Hud({
         </span>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Field tally: how many figures each army has buried, and how long each has
+ * been on the board.
+ *
+ * It ticks on its own timer rather than off the snapshot: the controller only
+ * publishes on real events (a move, a pause), so a second passing here must not
+ * be allowed to re-render the whole interface once per second.
+ */
+function FieldTally({ snapshot, getElapsed }: { snapshot: GameSnapshot; getElapsed: () => ElapsedState }) {
+  const running = snapshot.status === "playing" && !snapshot.paused;
+  const [elapsed, setElapsed] = useState<ElapsedState>(() => getElapsed());
+
+  // Half-second cadence so the seconds digit turns over without a visible lag,
+  // and one immediate read whenever the turn or the run state changes.
+  useEffect(() => {
+    setElapsed(getElapsed());
+    if (!running) return;
+    const id = setInterval(() => setElapsed(getElapsed()), 500);
+    return () => clearInterval(id);
+  }, [getElapsed, running, snapshot.turn, snapshot.moves.length]);
+
+  const losses: Record<Faction, number> = { w: 0, b: 0 };
+  for (const piece of snapshot.captured) losses[piece.color] += 1;
+
+  return (
+    <div
+      className="mc-tally mc-slate pointer-events-none"
+      aria-label={`Field tally. Ivory: ${losses.w} lost, ${formatElapsed(elapsed.whiteMs)} on the field. Obsidian: ${
+        losses.b
+      } lost, ${formatElapsed(elapsed.blackMs)} on the field.`}
+    >
+      <div className="mc-tally-head">
+        <span>Field tally</span>
+        <span className="mc-tally-total">
+          <Timer size={9} strokeWidth={2.4} />
+          {formatElapsed(elapsed.totalMs)}
+        </span>
+      </div>
+      <TallyRow
+        faction="w"
+        lost={losses.w}
+        ms={elapsed.whiteMs}
+        onMove={running && snapshot.turn === "w"}
+      />
+      <TallyRow
+        faction="b"
+        lost={losses.b}
+        ms={elapsed.blackMs}
+        onMove={running && snapshot.turn === "b"}
+      />
+    </div>
+  );
+}
+
+function TallyRow({
+  faction,
+  lost,
+  ms,
+  onMove,
+}: {
+  faction: Faction;
+  lost: number;
+  ms: number;
+  onMove: boolean;
+}) {
+  return (
+    <div className="mc-tally-row" data-faction={faction} data-live={onMove || undefined}>
+      <Crest faction={faction} size={12} active={onMove} />
+      <span className="mc-tally-name">{faction === "w" ? "Ivory" : "Obsidian"}</span>
+      {/* Keyed on the count so a fresh burial flashes the number. */}
+      <span key={lost} className="mc-tally-lost">
+        <Skull size={10} strokeWidth={2.2} />
+        {lost}
+      </span>
+      <span className="mc-tally-time">{formatElapsed(ms)}</span>
+    </div>
   );
 }
 

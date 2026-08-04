@@ -72,7 +72,8 @@ untouched.
 
 `GameShell.tsx` owns the phases (loading → menu → playing), the settings, attract mode and the
 keyboard shortcuts; `Hud.tsx` is everything on screen during a game. The board keeps the
-viewport: the turn slate and the icon rail sit in the top corners, the spoils panel is desktop-only,
+viewport: the turn slate (with the field tally under it) and the icon rail sit in the top corners,
+the spoils panel is desktop-only,
 phones get 34px buttons and drop the two redundant icons (flip lives in the camera menu,
 fullscreen is ignored by iOS),
 the move record lives behind a corner sigil (`H`), and the showcase transport is a slim
@@ -88,6 +89,21 @@ the side), `.mc-hud-corner` (bottom + left), `.mc-demo-dock`, `.mc-cinema-restor
 `inset-0` on purpose, or the hall would show through beside the cutout. Base padding still steps
 with the breakpoint (`--mc-edge`: 0.5 → 0.75 → 1 rem); the inset is added to it. Every variable is
 `0px` on a screen without a cutout, so nothing else changes.
+
+**Field tally** (`.mc-tally`, `FieldTally` in `Hud.tsx`). One row per army under the turn slate:
+crest, figures **lost**, time **on the field**, with the battle's total in the header. The row for
+the army on the move is lit — full opacity, a wash and an inset hairline in its own azure/ember — so
+the panel shows whose meter runs without another label, and a fresh burial swells and flares its
+loss count (`mc-tally-toll`). The panel is `pointer-events-none`: it is read, never touched, so taps
+in that corner still reach the board.
+
+Elapsed time is **not** the countdown. `ClockState` runs down and only exists when a clock was
+chosen; `ElapsedState` always accumulates, so an untimed duel still reports per-side time.
+`GameController.syncElapsed()` charges wall time to whoever is on the move and re-points the meter
+on every event that changes who is thinking (move, pause, undo, game over), so a paused showcase
+charges nobody. `FieldTally` reads it live via `controller.getElapsed()` on its own 500 ms interval
+instead of off the snapshot — the core publishes only on real events, and a passing second must not
+re-render the whole overlay.
 
 `Tooltip.tsx` explains the icon-only controls — name, one sentence, and a key cap when there is a
 shortcut. It opens after 110 ms, then instantly for the rest of a sweep along the rail, aligns to
@@ -140,7 +156,7 @@ src/
     tween.ts           promise-based tween engine
   ui/                plain React + CSS overlay
     GameShell.tsx      phases, settings, attract mode, shortcuts
-    Hud.tsx            top bar, spoils, chronicle sigil, showcase rail
+    Hud.tsx            top bar, field tally, spoils, chronicle sigil, showcase rail
     Tooltip.tsx        themed tooltip for the icon-only controls
     MainMenu.tsx / MoveLedger.tsx / SettingsPanel.tsx / GameOverModal.tsx / Heraldry.tsx
     medieval.css       the whole overlay's look
