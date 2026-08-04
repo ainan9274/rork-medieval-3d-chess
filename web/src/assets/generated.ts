@@ -292,8 +292,13 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-draw-and-shoot-from-back.glb`,
       death: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb`,
       // Musket held across the body at the ready — the line advances, it does
-      // not stroll. Alternative: `...-anim-spear-walk-inplace.glb`.
-      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-rifle-charge-inplace.glb`,
+      // not stroll. A full 1.13s gait cycle, so retimed to the footsoldier's
+      // cadence it reads as a march. The rifle *charge* on the same rig
+      // (`...-anim-rifle-charge-inplace.glb`) is a 0.53s sprint whose legs blur
+      // and whose hips carry six units of side-to-side root motion — stretched
+      // over a single square it read as a man juddering on the spot, so it is
+      // kept only as the charge below.
+      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-spear-walk-inplace.glb`,
       reload: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-standing-reload.glb`,
     },
   },

@@ -13,7 +13,14 @@ import { BOARD_TOP, BoardView, type HighlightKind, TILE, squareToWorld, worldToS
 import { CastleHall, buildEnvironmentMap } from "./environment";
 import { describeGpu, probeGpu, reflectionProbeWorks, type GpuReport } from "./diagnostics";
 import { EffectsSystem, ShakeSystem } from "./effects";
-import { FACTION_ACCENT, PieceFactory, PieceView, type ClipName, type TemplateKey } from "./pieces";
+import {
+  FACTION_ACCENT,
+  PieceFactory,
+  PieceView,
+  type ClipName,
+  type MarchClip,
+  type TemplateKey,
+} from "./pieces";
 import { PostFX } from "./postfx";
 import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
 import type { AmmoKind } from "./ammunition";
@@ -1443,6 +1450,21 @@ export class SceneEngine {
   }
 
   /**
+   * Hands a figure the stride it is about to move on. The strides are warmed in
+   * the background, so without this the first move of a game was made before the
+   * walk clip had landed and the figure slid across the board on its stance —
+   * which read as a rank having lost its animation altogether. Capped, so a slow
+   * network costs the move a fraction of a second rather than stalling the board.
+   *
+   * @returns whether the clip is now bound to this figure
+   */
+  private async armStride(piece: PieceView, name: MarchClip): Promise<boolean> {
+    if (piece.hasClip(name)) return true;
+    await Promise.race([this.factory.ensureClip(piece.color, piece.kind, name), wait(0.6)]);
+    return piece.hasClip(name);
+  }
+
+  /**
    * Moving a figure between two squares. A rigged sculpt turns to face its
    * destination, crosses the distance on its own legs and puts a real footfall
    * down on every step: the walk clip is retimed to the cadence of its rank, so
@@ -1460,9 +1482,13 @@ export class SceneEngine {
     const settings = QUALITY_SETTINGS[this.preset];
     const distance = from.distanceTo(to);
     const gait = GAITS[piece.kind];
-    const clip: "walk" | "run" = arc && piece.hasClip("run") ? "run" : "walk";
-    const onFoot =
-      !this.tactical && settings.characterAnimations && piece.hasAnimations && piece.hasClip(clip);
+    const wantsLegs = !this.tactical && settings.characterAnimations && piece.hasAnimations;
+    // The stride has to be in hand *before* the move is staged, not merely
+    // downloaded at some point: the opening move is made seconds after the board
+    // stands up, which is exactly when the stride clips are still in the air.
+    const clip: MarchClip =
+      wantsLegs && arc && (await this.armStride(piece, "run")) ? "run" : "walk";
+    const onFoot = wantsLegs && (clip === "run" || (await this.armStride(piece, "walk")));
 
     // Longer moves take more steps rather than a faster slide.
     const tiles = Math.max(0.6, distance / TILE);

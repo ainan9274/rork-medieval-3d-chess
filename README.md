@@ -347,7 +347,7 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | Clip | When it plays |
 | --- | --- |
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. One exception: the Grande Armée's marshal holds a **kneeling** stance — rifle up, scanning — which is also the kneel his strike fires from, so the shot grows out of the pose instead of restaging it |
-| `walk` | Looping in-place stride, retimed to the cadence of the move that is under way |
+| `walk` | Looping in-place stride, retimed to the cadence of the move that is under way. It must be a **full gait cycle**: a 0.5 s sprint cycle stretched across a single square reads as juddering on the spot, which is why the line infantry advances on the musket-across-the-body walk instead of the rifle charge that sits on the same rig |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
 | `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the **firing drill** (the marshal's is a drop onto one knee), played at its own readable length, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
@@ -371,10 +371,16 @@ How it is wired (`src/scene/pieces.ts`):
 - **Clips load in waves, not in one burst.** Twelve rigs × five or six clips is over seventy GLBs;
   firing them at once made the browser drop requests (`TypeError: Failed to fetch`) and figures
   silently lost their strike, so a capture looked like a piece dying untouched. The rig plus its
-  `idle` load first, then `PieceFactory.warmClips()` pulls `attack` → `death` → `walk` → `run`
-  two downloads wide, and every clip that lands is bound onto the figures already on the board
-  (`PieceView.installClip`). A capture additionally calls `ensureClip` for the attacker's strike
-  and the victim's death, so the beat waits (max 2.4 s) for its animation instead of skipping it.
+  `idle` load first, then `PieceFactory.warmClips()` pulls
+  `walk` → `run` → `attack` → `death` → `reload` → `aim` two downloads wide, and every clip that
+  lands is bound onto the figures already on the board (`PieceView.installClip`). The **strides**
+  are warmed before the strikes on purpose: the first thing any game does is move a piece.
+- **No beat plays without its clip.** A capture calls `ensureClip` for the attacker's strike and
+  the victim's death, so the fight waits (max 2.4 s) instead of skipping its animation — and
+  `glide()` does the same for the stride it is about to march on through `armStride()` (max
+  0.6 s). Without that second guard the opening move was staged while the walk clips were still
+  in the air, and the figure crossed the square frozen in its stance: the exact symptom of "this
+  rank has lost its walk animation".
 - If a strike clip is genuinely unavailable, `SceneEngine.lunge()` performs the swing by hand —
   wind-up, twist, lean back, then the blow over the top. The tilt is held through
   `PieceView.setStrikeTilt()` and re-applied after the mixer, which otherwise owns the pose.

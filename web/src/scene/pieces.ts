@@ -212,8 +212,15 @@ export interface PieceClips {
 
 export type ClipName = keyof PieceClips;
 
-/** Every clip a rig can carry, in the order the game needs them. */
-export const CLIP_ORDER: ClipName[] = ["idle", "attack", "death", "walk", "run", "reload", "aim"];
+/**
+ * Every clip a rig can carry, in the order the game needs them. The strides
+ * come straight after the stance: the first thing any game does is *move* a
+ * figure, and a stride that has not landed yet costs that move its legs. The
+ * strikes and deaths sit behind them because a capture asks for those by name
+ * before it plays (see {@link PieceFactory.ensureClip}), so they can never be
+ * missed — a stride, until now, could be.
+ */
+export const CLIP_ORDER: ClipName[] = ["idle", "walk", "run", "attack", "death", "reload", "aim"];
 
 /**
  * Fetched together with the rig itself. Everything else is pulled in afterwards
@@ -1529,9 +1536,10 @@ export class PieceFactory {
 
   /**
    * Pulls in the clips the opening did not need, a wave at a time and only two
-   * downloads wide: strikes first (a capture is the one beat that cannot be
-   * faked), then deaths, then the strides. Every clip that lands is pushed
-   * straight onto the figures already standing on the board.
+   * downloads wide, in {@link CLIP_ORDER}: strides first (the opening move is
+   * made seconds after the board stands up), then the strikes and deaths, then
+   * the firing drills. Every clip that lands is pushed straight onto the
+   * figures already standing on the board.
    */
   warmClips(): Promise<void> {
     if (!this.warming) this.warming = this.runWarm();
