@@ -112,6 +112,15 @@ interface WeaponSpec {
   towed?: boolean;
   /** Where a towed prop stands, in figure heights: +x is the holding side. */
   park?: THREE.Vector3;
+  /**
+   * Size of a towed prop against the figure hauling it, 1 = authored size.
+   *
+   * A gun carriage is a real object with a real size: it must not swell just
+   * because its crew grew taller. Authored against a 0.84-high artillery guard,
+   * so when that rank joined the royal band this holds the wheels where they
+   * were — without it a 19% taller crewman rolls his gun into the next square.
+   */
+  bulk?: number;
 }
 
 // ------------------------------------------------------------------ geometry
@@ -937,6 +946,8 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
   fieldCannon: {
     grip: 0,
     towed: true,
+    // 0.84 (the height this gun was authored against) / 0.99 (the guard's height).
+    bulk: 0.85,
     park: new THREE.Vector3(0.42, 0, -0.1),
     muzzle: new THREE.Vector3(0, 0.28, 0.36),
     aim: new THREE.Vector3(0, 1, 0),
@@ -1343,10 +1354,13 @@ export function attachWeapons(
   const haul = (id: WeaponId): void => {
     const spec = WEAPONS[id];
     const park = spec.park ?? new THREE.Vector3(0.4, 0, -0.1);
+    // The gun keeps its own size, and parks that many gun-lengths out from the
+    // crew rather than that many figure-heights (see {@link WeaponSpec.bulk}).
+    const size = unit * (spec.bulk ?? 1);
     const group = new THREE.Group();
     group.name = `train_${id}`;
-    group.scale.setScalar(unit);
-    group.position.set(park.x * unit, baseY + park.y * unit, park.z * unit);
+    group.scale.setScalar(size);
+    group.position.set(park.x * size, baseY + park.y * size, park.z * size);
     // Hauled at a slight angle, so the gun reads as being dragged rather than
     // parked in a battery line.
     group.rotation.y = -0.14;

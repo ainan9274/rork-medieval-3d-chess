@@ -17,12 +17,20 @@ import { radialTexture } from "./textures";
 import { Ease, type TweenManager } from "./tween";
 import { attachWeapons, type AttachedArms } from "./weapons";
 
-/** Rendered height (world units, 1 unit = 1 board square) per piece kind. */
+/**
+ * Rendered height (world units, 1 unit = 1 board square) per piece kind.
+ *
+ * Only two tiers read at camera distance: the men the crown sends out, and the
+ * crown itself. The three officer ranks therefore stand in the royal band beside
+ * the queen — a knight, a mage and a tower guardian are champions, not
+ * footsoldiers, and at their old 0.84-0.88 they sat close enough to the pawn's
+ * 0.7 to be mistaken for one. The king alone still stands over everything.
+ */
 export const PIECE_HEIGHT: Record<PieceKind, number> = {
   p: 0.7,
-  n: 0.86,
-  b: 0.88,
-  r: 0.84,
+  n: 0.98,
+  b: 1.0,
+  r: 0.99,
   q: 1.0,
   k: 1.12,
 };

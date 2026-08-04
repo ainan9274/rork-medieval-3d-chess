@@ -44,9 +44,11 @@ const THEMES: Record<Faction, BadgeTheme> = {
 /** Badge width in world units (1 unit = one board square). */
 export const BADGE_SCALE: Record<PieceKind, number> = {
   p: 0.34,
-  n: 0.36,
-  b: 0.36,
-  r: 0.36,
+  // The officer ranks now stand as tall as the queen (see `PIECE_HEIGHT`), and a
+  // minor-piece crest over a royal-sized figure read as an undersized sticker.
+  n: 0.41,
+  b: 0.41,
+  r: 0.41,
   q: 0.42,
   k: 0.44,
 };
@@ -250,9 +252,11 @@ const GLYPHS: Record<PieceKind, (ctx: CanvasRenderingContext2D) => void> = {
 /** Token diameter in world units (1 unit = one board square) per kind. */
 export const TOKEN_SCALE: Record<PieceKind, number> = {
   p: 0.64,
-  n: 0.72,
-  b: 0.72,
-  r: 0.74,
+  // Officers are royal-sized on the 3D board; the flat map keeps the same two
+  // tiers so switching views does not re-rank the army.
+  n: 0.81,
+  b: 0.81,
+  r: 0.82,
   q: 0.84,
   k: 0.9,
 };

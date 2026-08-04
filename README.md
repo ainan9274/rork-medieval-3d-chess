@@ -919,6 +919,26 @@ Drop glTF/GLB characters into `web/public/models/` and point the entries at
   loader derives the correction quaternion from the declared front/up axes.
 - **Scale** — any. `PieceFactory.normalize()` measures the model, rescales it to the height in
   `PIECE_HEIGHT` (`src/scene/pieces.ts`), centres it on X/Z and grounds it on Y.
+
+`PIECE_HEIGHT` is deliberately **two tiers, not six**. The board only has to say one thing about
+a figure at camera distance: is that a footsoldier, or is it somebody. So the knight, the mage
+and the tower guardian stand in the royal band with the queen (0.98 / 1.00 / 0.99 against her
+1.00) and only the king rises above them at 1.12; the pawn is left down at 0.70. Their old
+0.84-0.88 put them barely a hand over the pawn, and three officers reading as footsoldiers is a
+board that lies about itself. Everything hung off a figure follows the number — the crest above
+its crown, its pick collider, its held weapons, the sole line the dissolve burns up from — so
+the rest of this is one edit, with two exceptions worth knowing:
+
+- **Crests and map tokens are re-ranked with them** (`BADGE_SCALE`, `TOKEN_SCALE` in
+  `src/scene/rankBadges.ts`). A minor-piece crest floating over a royal-sized figure reads as an
+  undersized sticker, and the flat overhead map keeps the same two tiers so switching views does
+  not silently re-rank the army.
+- **The battery's gun does *not* grow with its crew** (`WeaponSpec.bulk`). A held weapon is
+  proportional to the man holding it; a Gribeauval field piece is a real object with a real size.
+  Towed props are authored in figure heights, so a 19% taller artillery guard would have rolled
+  his wheels a fifth of a square further out into his neighbour's file. `bulk` (0.85 — the height
+  the gun was drawn against over the guard's new one) holds the carriage and its parking standoff
+  exactly where they were while the crewman grows.
 - **Materials** are cloned per instance and tinted per faction in `applyFactionLook()`.
 
 If a rigged model fails to download the loader falls back to the static sculpt, and if that

@@ -500,6 +500,13 @@ Drop higher-quality glTF/GLB characters into `public/models/` and point the entr
   the correction quaternion from the declared front/up axes).
 - Any scale: `PieceFactory.normalize()` measures the model and rescales it to the height in
   `PIECE_HEIGHT` (`src/scene/pieces.ts`), then centres it on X/Z and grounds it on Y.
+
+`PIECE_HEIGHT` is **two tiers, not six**: knight, mage and tower guardian stand in the royal band
+with the queen (0.98 / 1.00 / 0.99 vs 1.00), the king alone rises to 1.12, the pawn stays at 0.70.
+At their old 0.84-0.88 the three officers read as footsoldiers at camera distance. Crests and flat
+map tokens are re-ranked with them (`BADGE_SCALE`, `TOKEN_SCALE` in `scene/rankBadges.ts`), and the
+battery's towed gun is held to its authored size by `WeaponSpec.bulk` — a field piece must not swell
+because its crew got taller, or its wheels roll into the neighbouring file.
 - Materials are cloned per instance and tinted per faction in `applyFactionLook()`.
 
 If a rigged model fails to download the loader falls back to the static sculpt, and if that
