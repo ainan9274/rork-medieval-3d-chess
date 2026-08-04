@@ -60,7 +60,7 @@ export function MainMenu({ onStart, onOpenSettings, attract, onInteract }: MainM
 
   return (
     <div
-      className="mc-menu pointer-events-auto absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-5 py-6"
+      className="mc-menu mc-modal-pad pointer-events-auto absolute inset-0 flex flex-col items-center justify-center overflow-hidden"
       onPointerDown={onInteract}
       onPointerMove={onInteract}
     >

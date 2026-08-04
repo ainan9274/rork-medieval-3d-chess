@@ -4,6 +4,17 @@
    ------------------------------------------------------------------ */
 
 :root {
+  /* Notched phones report their cutout and home bar as viewport insets. With
+     `viewport-fit=cover` on the document (see index.html) these resolve to real
+     pixels on an iPhone with a Dynamic Island or a notch, and to 0 on every
+     other screen — so one set of numbers serves all of them and no device needs
+     a user-agent guess. Every surface pinned to a screen edge pays the inset on
+     that edge and nothing else. */
+  --mc-safe-top: env(safe-area-inset-top, 0px);
+  --mc-safe-right: env(safe-area-inset-right, 0px);
+  --mc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mc-safe-left: env(safe-area-inset-left, 0px);
+
   --ink: #23180d;
   --ink-soft: #4a3a24;
   --parchment-1: #efe2c4;
@@ -40,6 +51,53 @@
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+/* ------------------------------------------------------- safe-area frames */
+
+/* The top bar sits under the clock and the camera on a notched phone, so it
+   carries the top inset; held sideways the cutout moves to one flank, which is
+   why the horizontal insets are paid too. The bottom edge is free — the bar
+   only ever grows downwards. */
+.mc-hud-top {
+  --mc-edge: 0.75rem;
+  padding: calc(var(--mc-edge) + var(--mc-safe-top)) calc(var(--mc-edge) + var(--mc-safe-right)) var(--mc-edge)
+    calc(var(--mc-edge) + var(--mc-safe-left));
+}
+
+/* Bottom-left corner (the chronicle sigil and its panel): clear of the home
+   bar, and of a side cutout when the phone is held sideways. */
+.mc-hud-corner {
+  --mc-edge: 0.75rem;
+  padding: var(--mc-edge) var(--mc-edge) calc(var(--mc-edge) + var(--mc-safe-bottom))
+    calc(var(--mc-edge) + var(--mc-safe-left));
+}
+
+@media (min-width: 640px) {
+  .mc-hud-top,
+  .mc-hud-corner {
+    --mc-edge: 1rem;
+  }
+}
+
+/* Spoils rail and the frame counter — desktop and tablet only, but a tablet in
+   landscape still has a home bar and rounded corners. */
+.mc-spoils-dock {
+  top: calc(6rem + var(--mc-safe-top));
+  right: calc(1rem + var(--mc-safe-right));
+}
+
+.mc-fps {
+  right: calc(0.75rem + var(--mc-safe-right));
+  bottom: calc(0.5rem + var(--mc-safe-bottom));
+}
+
+/* Full-screen panels (menu, settings, result): the dimmed backdrop still
+   reaches every corner — pulling it in would leave the hall showing through
+   beside the cutout — while the content itself is padded off the unsafe band. */
+.mc-modal-pad {
+  padding: calc(1.5rem + var(--mc-safe-top)) calc(1.25rem + var(--mc-safe-right))
+    calc(1.5rem + var(--mc-safe-bottom)) calc(1.25rem + var(--mc-safe-left));
 }
 
 /* ------------------------------------------------------------ surfaces */
@@ -565,9 +623,13 @@
     height: 2.15rem;
   }
 
+  .mc-hud-top,
+  .mc-hud-corner {
+    --mc-edge: 0.5rem;
+  }
+
   .mc-hud-top {
     gap: 0.4rem;
-    padding: 0.5rem;
   }
 
   .mc-hud-status {
@@ -950,15 +1012,15 @@
    leaves every rank visible. Icon-only, and it folds to a single sigil. */
 .mc-demo-dock {
   position: absolute;
-  right: 0.7rem;
-  bottom: 0.7rem;
+  right: calc(0.7rem + var(--mc-safe-right));
+  bottom: calc(0.7rem + var(--mc-safe-bottom));
   z-index: 20;
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
   justify-content: flex-start;
   gap: 0.35rem;
-  max-width: calc(100vw - 1.4rem);
+  max-width: calc(100vw - 1.4rem - var(--mc-safe-left) - var(--mc-safe-right));
   flex-wrap: wrap-reverse;
 }
 
@@ -1152,7 +1214,7 @@
   align-items: flex-start;
   gap: 0.16rem;
   width: max-content;
-  max-width: min(15rem, calc(100vw - 2rem));
+  max-width: min(15rem, calc(100vw - 2rem - var(--mc-safe-left) - var(--mc-safe-right)));
   padding: 0.4rem 0.55rem;
   border-radius: 3px;
   border: 1px solid rgba(216, 177, 99, 0.5);
@@ -1271,8 +1333,8 @@
 /* Clean-capture mode: the only thing left on screen. */
 .mc-cinema-restore {
   position: absolute;
-  right: 0.75rem;
-  bottom: 0.75rem;
+  right: calc(0.75rem + var(--mc-safe-right));
+  bottom: calc(0.75rem + var(--mc-safe-bottom));
   z-index: 30;
   display: grid;
   place-items: center;

@@ -222,7 +222,8 @@ export function Hud({
   return (
     <>
       {/* Top bar */}
-      <div className="mc-hud-top pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3 sm:p-4">
+      {/* Padding (including the notch/home-bar insets) lives in `.mc-hud-top`. */}
+      <div className="mc-hud-top pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3">
         <div className="mc-hud-status mc-slate mc-goldleaf pointer-events-auto flex items-center gap-3 px-3 py-2.5">
           <Crest faction={snapshot.turn} size={26} active />
           <div>
@@ -440,14 +441,14 @@ export function Hud({
 
       {/* Spoils tucks under the top bar on desktop — it is short and clear of
           the board. */}
-      <div className="mc-rise pointer-events-auto absolute right-4 top-24 hidden w-56 lg:block xl:w-60">{spoils}</div>
+      <div className="mc-spoils-dock mc-rise pointer-events-auto absolute hidden w-56 lg:block xl:w-60">{spoils}</div>
 
       {/* Chronicle: a small corner sigil that unfurls the record on demand. The
           wrapper stays click-through so the board keeps every tap that is not
           aimed at the button or the open panel. */}
       <div
         ref={chronicleRef}
-        className="pointer-events-none absolute bottom-0 left-0 z-30 flex flex-col items-start gap-2 p-3 sm:p-4"
+        className="mc-hud-corner pointer-events-none absolute bottom-0 left-0 z-30 flex flex-col items-start gap-2"
       >
         {chronicleOpen ? (
           <div className="mc-chronicle-panel pointer-events-auto flex h-[min(56vh,460px)] w-[min(84vw,18.5rem)] flex-col gap-2 lg:w-64">
@@ -616,7 +617,7 @@ export function Hud({
       ) : null}
 
       {fps > 0 ? (
-        <span className="pointer-events-none absolute bottom-2 right-3 hidden text-[0.62rem] tracking-widest text-[#5f5747] lg:block">
+        <span className="mc-fps pointer-events-none absolute hidden text-[0.62rem] tracking-widest text-[#5f5747] lg:block">
           {fps} FPS
         </span>
       ) : null}

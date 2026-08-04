@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` lets the hall fill a notched screen edge to edge AND
+         is what makes `env(safe-area-inset-*)` resolve to real pixels — without
+         it iOS reports every inset as 0 and the interface hides under the
+         cutout and the home bar. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>King's Gambit — Medieval 3D Chess</title>
     <meta name="description" content="Cinematic 3D chess in a torch-lit castle hall. Play a computer opponent or a friend." />
     <meta name="theme-color" content="#05060a" />

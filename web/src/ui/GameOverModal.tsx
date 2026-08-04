@@ -42,7 +42,7 @@ export function GameOverModal({ result, pgn, playerColor, versusComputer, onRema
   };
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/65 px-5 backdrop-blur-[3px]">
+    <div className="mc-modal-pad pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/65 backdrop-blur-[3px]">
       <div className="mc-parchment mc-goldleaf mc-rise w-full max-w-md overflow-hidden">
         <div className="px-6 pb-6 pt-7 text-center">
           <div className="flex justify-center gap-3">

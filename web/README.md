@@ -77,6 +77,17 @@ fullscreen is ignored by iOS),
 the move record lives behind a corner sigil (`H`), and the showcase transport is a slim
 bottom-right rail that folds down to a single icon.
 
+**Safe areas.** `index.html` opts into `viewport-fit=cover` so the hall fills a notched screen —
+and so `env(safe-area-inset-*)` reports real pixels at all (without it iOS returns `0px` for every
+inset, which is why the turn slate used to sit under the Dynamic Island). `medieval.css` turns
+those into `--mc-safe-top/right/bottom/left`, and each edge-anchored surface spends only the inset
+for the edge it is pinned to: `.mc-hud-top` (top + both flanks, since a landscape cutout moves to
+the side), `.mc-hud-corner` (bottom + left), `.mc-demo-dock`, `.mc-cinema-restore`, `.mc-fps`,
+`.mc-spoils-dock`, and `.mc-modal-pad` for the full-screen panels — whose dimmed backdrop stays at
+`inset-0` on purpose, or the hall would show through beside the cutout. Base padding still steps
+with the breakpoint (`--mc-edge`: 0.5 → 0.75 → 1 rem); the inset is added to it. Every variable is
+`0px` on a screen without a cutout, so nothing else changes.
+
 `Tooltip.tsx` explains the icon-only controls — name, one sentence, and a key cap when there is a
 shortcut. It opens after 110 ms, then instantly for the rest of a sweep along the rail, aligns to
 whichever screen edge keeps it visible, flashes for 1.8 s on a touch press, and closes on Escape,

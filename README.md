@@ -1104,6 +1104,44 @@ What else the solved framing carries:
 - **The interface tightens at the two ends** on a phone: 34px icon buttons, a compact turn slate,
   and the two controls that are either duplicated in the camera menu (flip) or ignored by the
   platform (fullscreen on iOS) give up their place in the row.
+- **The notch and the home bar are respected.** The hall itself is drawn edge to edge
+  (`viewport-fit=cover`), but nothing you have to read or press is: every surface pinned to a
+  screen edge pays `env(safe-area-inset-*)` on that edge — see
+  [Safe areas on notched phones](#safe-areas-on-notched-phones).
+
+## Safe areas on notched phones
+
+On an iPhone with a Dynamic Island or a notch the turn slate and the icon rail were drawn *under*
+the cutout, and the chronicle sigil sat behind the home bar.
+
+**The cause was one missing token.** The interface was laid out with plain padding
+(`p-3 sm:p-4`, `bottom-0 left-0`) against the raw viewport, and the document's viewport meta had
+no `viewport-fit=cover`. Without that opt-in iOS reports **every** `env(safe-area-inset-*)` as
+`0px` — so even had the CSS asked for the insets, it would have been handed nothing. The screen
+is also genuinely edge-to-edge for the 3D hall, which is what we want; only the interface needed
+pulling in.
+
+**The fix** — `viewport-fit=cover` in `web/index.html`, then four variables in `medieval.css`
+(`--mc-safe-top/right/bottom/left`) that every edge-anchored surface spends on **its own edge and
+no other**:
+
+- **Top bar** (`.mc-hud-top`) — top inset for the cutout, plus both horizontal insets, because
+  held sideways the cutout moves to a flank and the turn slate is the first thing under it. The
+  bottom edge stays untouched: the bar only ever grows downwards.
+- **Chronicle corner** (`.mc-hud-corner`) — bottom inset for the home bar, left inset for a side
+  cutout. Its base padding still steps 0.5 → 0.75 → 1 rem with the screen, so the inset is added
+  to the right number rather than replacing it.
+- **Showcase transport, clean-capture button, frame counter, spoils rail** — each shifted off the
+  corner it is docked in. The transport's `max-width` subtracts the horizontal insets too, so it
+  wraps instead of running under a rounded corner.
+- **Full-screen panels** (menu, settings, result) use `.mc-modal-pad`. The dimmed backdrop is
+  deliberately left at `inset-0`: inset it and the lit hall shows through in the band beside the
+  cutout. Only the content inside is padded.
+- **Tooltips** cap their width against the *safe* width, so one opening beside a landscape notch
+  is not clipped by it.
+
+All four variables resolve to `0px` on every screen without a cutout, so desktop and Android
+layouts are byte-for-byte what they were. Nothing here is a user-agent check.
 
 ## Browser support
 

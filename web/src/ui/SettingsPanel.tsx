@@ -45,7 +45,7 @@ const PRESETS: { key: QualityPreset; label: string; note: string }[] = [
 
 export function SettingsPanel({ settings, autoDetected, gpu, fps, onChange, onClose }: SettingsPanelProps) {
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center overflow-hidden bg-black/60 px-5 py-6 backdrop-blur-sm">
+    <div className="mc-modal-pad pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center overflow-hidden bg-black/60 backdrop-blur-sm">
       <div className="mc-slate mc-goldleaf mc-rise flex max-h-full w-full min-h-0 max-w-lg flex-col p-5 sm:p-6">
         <div className="mb-4 flex shrink-0 items-center justify-between">
           <h2 className="mc-display text-lg text-[#f2e2bd]">Settings</h2>
