@@ -12,6 +12,7 @@ import { JungleOverlay } from "./jungle";
 import { BOARD_TOP, BoardView, type HighlightKind, TILE, squareToWorld, worldToSquare } from "./board";
 import { CastleHall, buildEnvironmentMap } from "./environment";
 import { describeGpu, probeGpu, reflectionProbeWorks, type GpuReport } from "./diagnostics";
+import { CheckAlarm } from "./alarm";
 import { EffectsSystem, ShakeSystem } from "./effects";
 import {
   FACTION_ACCENT,
@@ -833,6 +834,8 @@ export class SceneEngine {
   private jungle: JungleOverlay;
   private board = new BoardView();
   private effects = new EffectsSystem();
+  /** Red light over whichever king is in check (see {@link CheckAlarm}). */
+  private alarm = new CheckAlarm();
   /**
    * The only point lights sorcery is ever allowed to use. They are added to the
    * scene once and reused, because every change to the scene's light count makes
@@ -1031,6 +1034,7 @@ export class SceneEngine {
     this.scene.add(this.board.group);
     this.board.applyArena(look);
     this.scene.add(this.effects.group);
+    this.scene.add(this.alarm.group);
     // Three slots: the gathering fire, the killing bolt and a judgement column
     // can all be alight at once. Anything beyond that goes unlit rather than
     // growing the set. Presets without post-processing stay entirely unlit.
@@ -1131,6 +1135,7 @@ export class SceneEngine {
     this.jungle.update(delta, this.camera);
     this.board.update(delta);
     this.effects.update(delta);
+    this.alarm.update(delta);
     this.shake.update(delta);
 
     for (const piece of this.pieces.values()) piece.update(delta, this.elapsed);
@@ -1579,7 +1584,12 @@ export class SceneEngine {
 
     if (event.isCheck) {
       audio.play("check", 0.55);
-      this.shake.add(0.2);
+      // The alarm was already lit by the state publish, but the *declaration* is
+      // this beat — the moment the move actually lands on the board — so the
+      // surge and the rumble are fired from here rather than from `onState`.
+      // A rumble, not a jolt: nothing struck the camera, the hall reacted.
+      this.alarm.strike();
+      this.shake.tremor(0.5, 1.1);
     }
 
     if (
@@ -4229,14 +4239,23 @@ export class SceneEngine {
 
   private applyCheckHighlight(snapshot: GameSnapshot): void {
     for (const piece of this.pieces.values()) piece.setAlarm(0);
-    if (!snapshot.inCheck || snapshot.status !== "playing") return;
+    const threatened = this.threatenedKing(snapshot);
+    // The alarm is driven off the *state*, not off the move that caused it, so it
+    // is also right after an undo, a rebuild or a mid-game graphics change — and
+    // it always stands down when the king walks out of check.
+    this.alarm.setThreat(threatened ? squareToWorld(threatened.square) : null);
+    if (!threatened) return;
+    threatened.piece.setAlarm(1);
+    this.board.setHighlight(threatened.square, "check", true);
+  }
+
+  /** The king currently in check, if the game is still being played. */
+  private threatenedKing(snapshot: GameSnapshot): { square: SquareId; piece: PieceView } | null {
+    if (!snapshot.inCheck || snapshot.status !== "playing") return null;
     for (const [square, piece] of this.pieces) {
-      if (piece.kind === "k" && piece.color === snapshot.turn) {
-        piece.setAlarm(1);
-        this.board.setHighlight(square, "check", true);
-        break;
-      }
+      if (piece.kind === "k" && piece.color === snapshot.turn) return { square, piece };
     }
+    return null;
   }
 
   private onState(snapshot: GameSnapshot): void {
@@ -4671,6 +4690,7 @@ export class SceneEngine {
     this.pieces.clear();
     this.captured = [];
     this.effects.dispose();
+    this.alarm.dispose();
     this.spellLights.dispose();
     disposeStrikeAssets();
     disposeGunAssets();

@@ -143,7 +143,8 @@ src/
     armoury.ts         fits the generated Napoleonic weapons into the prop frame
     gltfQueue.ts       the one download window every GLB fetch shares
     rankBadges.ts      floating heraldic crests + flat map tokens
-    effects.ts         particle bursts, flashes, dissolve, camera shake
+    effects.ts         particle bursts, flashes, dissolve, camera shake and rumble
+    alarm.ts           the red lamp that stands over a king in check
     strikes.ts         per-rank blow visuals (slash arc, ground wave, pillar)
     spells.ts          fireball orbs, per-army fire, the shared light pool
     gunfire.ts         muzzle flashes, rounds in flight, powder smoke banks

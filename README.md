@@ -87,6 +87,10 @@ cd web && bun install && bun run dev
   army dies in its own language of pain: the Ivory Kingdom roars and groans, the Sun Empire
   shrieks and hisses, and the Grande Armée — being shot rather than struck — has the air punched
   out of it first and the voice second.
+- **The check alarm** — the instant a king falls under the sword, the hall itself reacts: a red
+  lamp lights over the threatened crown, red light bleeds in from the edges of the screen, and the
+  camera picks up a low rumble. The surge fades in under a second, then the light keeps breathing
+  quietly for as long as the king stays in check.
 - **Four battlegrounds** that relight the whole world — sky, haze, stone colour, tile
   contrast, fires, birds, siege engines and the film grade.
 - **2D tactical view** — one key lifts the camera straight overhead and flattens every figure
@@ -313,7 +317,8 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── armoury.ts          fits the generated Napoleonic weapons into the prop frame
         │   ├── gltfQueue.ts        the one download window every GLB fetch shares
         │   ├── rankBadges.ts       floating heraldic crests, flat map tokens
-        │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
+        │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake and rumble
+        │   ├── alarm.ts            the red lamp that stands over a king in check
         │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
         │   ├── spells.ts           fireball orbs, per-army fire, the shared light pool
         │   ├── gunfire.ts          muzzle flashes, rounds in flight, powder smoke banks

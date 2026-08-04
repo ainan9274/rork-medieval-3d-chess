@@ -991,6 +991,65 @@
   transition: background 400ms ease;
 }
 
+/* Check alarm: red light bleeding in from the edges of the screen.
+
+   This lives in the interface rather than in the render pipeline on purpose.
+   The hall's colour grade is a post-processing pass, and post-processing is off
+   entirely on the low preset, bypassed in safe rendering, and dropped for good
+   on drivers that fail the black-frame watchdog — a warning the player might
+   never see is not a warning. As a screen layer it costs nothing, cannot fail on
+   a bad driver, and reads the same on every setting. The lamp over the king
+   itself is the 3D half of the same alarm (see `scene/alarm.ts`).
+
+   It is remounted on every checking move, so the hard flash replays each time
+   rather than only on the first check of a game. */
+.mc-check-wash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255, 26, 12, 0) 34%, rgba(178, 22, 12, 0.62) 100%);
+  opacity: 0;
+  will-change: opacity, transform;
+  /* One hard surge, then a slow breath for as long as the king stays in check.
+     The breath is listed second so it wins the opacity once it starts. */
+  animation:
+    mc-check-flash 760ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    mc-check-breathe 3s ease-in-out 760ms infinite;
+}
+
+@keyframes mc-check-flash {
+  0% {
+    opacity: 0;
+    transform: scale(1.14);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+}
+
+@keyframes mc-check-breathe {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.36;
+  }
+}
+
+/* Held steady for anyone who has asked the system for less motion: the warning
+   still has to be there, it just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .mc-check-wash {
+    animation: none;
+    opacity: 0.26;
+  }
+}
+
 /* Battleground picker: a swatch of each map above its name. */
 .mc-arena-card {
   display: flex;

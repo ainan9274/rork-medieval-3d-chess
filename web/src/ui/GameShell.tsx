@@ -429,6 +429,14 @@ export function GameShell() {
       </div>
       <div className="mc-vignette" />
 
+      {/* The screen half of the check alarm — the 3D half is the red lamp over
+          the king itself. Keyed on the ply count so every checking move replays
+          the surge instead of only the first check of the game. It stays out in
+          the menu and the attract loop, where no player is under threat. */}
+      {phase === "playing" && snapshot.status === "playing" && snapshot.inCheck ? (
+        <div key={snapshot.moves.length} className="mc-check-wash" aria-hidden="true" />
+      ) : null}
+
       {/* Overlay layer */}
       <div className="pointer-events-none absolute inset-0">
         {phase === "loading" && !unsupported ? <LoadingScreen progress={progress} /> : null}

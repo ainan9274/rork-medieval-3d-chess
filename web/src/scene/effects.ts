@@ -315,28 +315,68 @@ export class EffectsSystem {
   }
 }
 
-/** Decaying positional camera shake, applied after the controls update. */
+/**
+ * Camera shake, on two channels that decay independently.
+ *
+ * They are kept apart because the two things they describe do not feel alike.
+ * `add` is an **impact**: a cannon, a blade landing, a body hitting stone — high
+ * frequency, gone in a blink. `tremor` is a **rumble**: the hall itself reacting
+ * to something, so it swells in rather than starting at full amplitude, runs an
+ * order of magnitude slower, and lasts long enough to be felt rather than
+ * flinched at. Driving an alarm off `add` reads as the camera being punched.
+ */
 export class ShakeSystem {
   private trauma = 0;
   private elapsed = 0;
+  /** Rumble amplitude, 0-1. */
+  private rumble = 0;
+  /** How fast the rumble bleeds away, in units of amplitude per second. */
+  private rumbleDecay = 1;
+  /** Eased-in envelope on the rumble, so it never starts on a hard edge. */
+  private swell = 0;
   readonly offset = new THREE.Vector3();
 
+  /** A hit: sharp, high frequency, over in a fraction of a second. */
   add(amount: number): void {
     this.trauma = Math.min(1, this.trauma + amount);
   }
 
+  /**
+   * A rumble: low frequency, swells in and rolls out over `seconds`.
+   * @param amount Peak amplitude, 0-1.
+   * @param seconds Roughly how long it takes to fade back to still.
+   */
+  tremor(amount: number, seconds = 1): void {
+    this.rumble = Math.min(1, Math.max(this.rumble, amount));
+    this.rumbleDecay = 1 / Math.max(0.15, seconds);
+  }
+
   update(delta: number): void {
     this.elapsed += delta;
-    if (this.trauma <= 0) {
-      this.offset.set(0, 0, 0);
-      return;
+    this.offset.set(0, 0, 0);
+
+    if (this.trauma > 0) {
+      this.trauma = Math.max(0, this.trauma - delta * 1.9);
+      const magnitude = this.trauma * this.trauma * 0.32;
+      this.offset.set(
+        Math.sin(this.elapsed * 47) * magnitude,
+        Math.sin(this.elapsed * 61 + 1.3) * magnitude * 0.7,
+        Math.sin(this.elapsed * 53 + 2.1) * magnitude,
+      );
     }
-    this.trauma = Math.max(0, this.trauma - delta * 1.9);
-    const magnitude = this.trauma * this.trauma * 0.32;
-    this.offset.set(
-      Math.sin(this.elapsed * 47) * magnitude,
-      Math.sin(this.elapsed * 61 + 1.3) * magnitude * 0.7,
-      Math.sin(this.elapsed * 53 + 2.1) * magnitude,
-    );
+
+    if (this.rumble > 0) {
+      // Two beats up, then out with the rumble itself: the swell is what keeps
+      // the first frame from jumping.
+      this.swell = Math.min(1, this.swell + delta * 7);
+      this.rumble = Math.max(0, this.rumble - delta * this.rumbleDecay);
+      const magnitude = this.rumble * this.swell * 0.075;
+      // Slow, drifting frequencies, and mostly lateral — a floor moving under
+      // the rig, not a blow to the lens.
+      this.offset.x += Math.sin(this.elapsed * 11.3) * magnitude;
+      this.offset.y += Math.sin(this.elapsed * 8.1 + 0.7) * magnitude * 0.55;
+      this.offset.z += Math.sin(this.elapsed * 9.7 + 2.4) * magnitude;
+      if (this.rumble <= 0) this.swell = 0;
+    }
   }
 }
