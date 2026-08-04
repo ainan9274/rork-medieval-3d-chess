@@ -158,6 +158,9 @@ The board owns the screen; every panel is either short, in a corner, or foldable
   one clapperboard icon. Pause is shown by a breathing play button instead of a large label.
 - **Cinema mode** (`C`) removes the overlay completely and leaves one small restore button, so
   a screen capture is board-only.
+- **The sight picture** (`src/ui/ScopeOverlay.tsx`) is the one overlay the *engine* raises: when
+  the Grande Armée's marshal levels his rifle, the frame closes down onto the body he is
+  shooting at (see [Gunpowder combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)).
 
 ## Game modes
 
@@ -490,6 +493,21 @@ hammered out from under the wheels on the frame it fires, the trail is heard sla
 behind the report with the wheels landing after it, and the hall takes the shock of the recoil a
 beat *after* the shot rather than with it. Every voice is synthesised by `calibre` in one mixer
 method — no assets, so a volley never waits on a download.
+
+**The rifle is the only barrel with sights, so it is the only one fired from behind them.** For a
+bishop capture the engine raises a sight picture over the whole interface (`SceneCallbacks.onScope`
+→ `src/ui/ScopeOverlay.tsx`, `.mc-scope` in `medieval.css`): the hall goes dark around a narrow
+tube on the target, a brass bezel and a two-wire reticle with range ticks settle over it, the
+shooter's held breath drifts under the crosshair, the report throws the whole picture up off the
+mark and walks it back down, and the frame opens out again on the frame the body drops — in step
+with the lens pulling back out of its 8.5° punch-in. The reticle **tracks the body**: the overlay
+asks `SceneEngine.scopeTarget()` once a frame and writes the result into two custom properties on
+the DOM, so it stays on the target while the camera is still moving without re-rendering React or
+touching the animation loop. Everything animates on `transform` and `opacity` only — no filters,
+no backdrop blur — so a software rasteriser is never asked to composite a full-screen effect
+mid-fight, and `prefers-reduced-motion` keeps the tube but drops the breath and the recoil. The
+sight picture is skipped on the flat tactical map, and `closeScope()` runs from the battle beat's
+error path too, so a broken effect can never leave the frame shut.
 
 The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
 barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a

@@ -54,6 +54,15 @@ shortcut. It opens after 110 ms, then instantly for the rest of a sweep along th
 whichever screen edge keeps it visible, flashes for 1.8 s on a touch press, and closes on Escape,
 blur or scroll. It renders inside its anchor rather than a body portal so it survives fullscreen.
 
+`ScopeOverlay.tsx` is the one overlay driven by the engine rather than by a click. When the Grande
+Armée's marshal fires (`SceneCallbacks.onScope`), the frame closes down onto the body he is
+shooting at: a dark tube, a brass bezel, a two-wire reticle with range ticks, the shooter's held
+breath drifting under the crosshair, a recoil that throws the picture off the mark, and the frame
+opening out again as the body drops. The reticle follows the target by polling
+`SceneEngine.scopeTarget()` in a `requestAnimationFrame` loop and writing two custom properties
+onto the DOM — no React re-render per frame — and it animates on `transform` / `opacity` only, so
+software rasterisers are never asked to composite a full-screen filter mid-fight.
+
 ## Architecture
 
 Rendering is fully decoupled from the rules: the chess core emits events and the scene
@@ -90,6 +99,7 @@ src/
     GameShell.tsx      phases, settings, attract mode, shortcuts
     Hud.tsx            top bar, spoils, chronicle sigil, showcase rail
     Tooltip.tsx        themed tooltip for the icon-only controls
+    ScopeOverlay.tsx   the marksman's sight picture during a rifle shot
     MainMenu.tsx / MoveLedger.tsx / SettingsPanel.tsx / GameOverModal.tsx / Heraldry.tsx
     medieval.css       the whole overlay's look
   audio/             Web Audio mixer with layered score stems

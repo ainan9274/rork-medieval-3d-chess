@@ -39,6 +39,26 @@ export type CameraPreset = "white" | "black" | "top" | "cinematic";
  */
 export type ShowcaseCamera = "still" | "orbit" | "follow";
 
+/**
+ * A marksman's sight picture, mirrored one-for-one by the UI overlay.
+ *
+ * The rifle is the only arm on the board with real sights, so it is the only
+ * one that earns this: the frame closes down onto the body the moment the
+ * barrel comes round, and opens again once the shot has been taken.
+ */
+export interface ScopeState {
+  /** `aim` narrows the frame onto the target; `fire` is the frame the shot leaves. */
+  phase: "aim" | "fire";
+  /** Seconds the sight picture is held before the shot, so the UI can pace itself. */
+  hold: number;
+}
+
+/** Where a sighted body sits on screen, as 0..1 across the canvas. */
+export interface ScreenPoint {
+  x: number;
+  y: number;
+}
+
 export interface SceneCallbacks {
   onLoadProgress: (ratio: number) => void;
   onReady: () => void;
@@ -54,6 +74,11 @@ export interface SceneCallbacks {
    * rendering, so the UI can persist that choice for the next visit.
    */
   onRenderFallback?: (message: string, safe: boolean) => void;
+  /**
+   * The marksman's sight picture opening, firing and closing. Null means the
+   * eye has come off the sights and the overlay should open the frame again.
+   */
+  onScope?: (state: ScopeState | null) => void;
 }
 
 interface CameraShot {
@@ -80,6 +105,9 @@ const SHOWCASE_SHOT: CameraShot = {
 
 /** What the follow camera looks at between moves. */
 const BOARD_FOCUS = new THREE.Vector3(0, 0.45, 0);
+
+/** Scratch vector for projecting the sighted body; never held between calls. */
+const SCOPE_PROBE = new THREE.Vector3();
 
 /**
  * The flat tactical map: high above the board, dead centre and shot through a
@@ -580,6 +608,16 @@ export class SceneEngine {
   private pointerDownAt: { x: number; y: number; square: SquareId | null } | null = null;
   private legalTargets = new Map<SquareId, boolean>();
   private previewing = false;
+
+  /**
+   * The body currently under a marksman's sights, kept so the overlay's reticle
+   * can be told where it sits on screen every frame while the camera is still
+   * moving. Cleared before the body is banished, so a disposed view is never
+   * projected.
+   */
+  private scopeVictim: PieceView | null = null;
+  /** True between the sights coming up and the eye coming off them. */
+  private scopeLive = false;
 
   private lastFrameTime = 0;
   private elapsed = 0;
@@ -1176,6 +1214,7 @@ export class SceneEngine {
           // A broken effect must never strand a figure in the middle of a fight:
           // finish the kill the plain way so the board stays consistent.
           console.warn("[scene] battle beat failed", error);
+          this.closeScope();
           this.camera.fov = DEFAULT_FOV;
           this.camera.updateProjectionMatrix();
           piece.setStrikeTilt(0);
@@ -1827,6 +1866,11 @@ export class SceneEngine {
     // A duel at range: hold both ends of the shot in frame.
     this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
     const originalFov = this.camera.fov;
+
+    // Only the rifle carries sights, so only the rifle earns the sight picture:
+    // the frame closes down onto the body for as long as the breath is held.
+    const sighted = attacker.kind === "b";
+    if (sighted) this.openScope(victim, 0.32 + gun.aim);
     void this.tweens.to({
       duration: 0.26,
       easing: Ease.outCubic,
@@ -1878,6 +1922,7 @@ export class SceneEngine {
       weight: gun.calibre,
       volume: 1,
     });
+    if (sighted) this.fireScope();
     this.shake.add(Math.min(1, 0.3 + gun.calibre * 0.7));
 
     void spawnMuzzleFlash(this.scene, this.tweens, muzzle, {
@@ -1984,6 +2029,10 @@ export class SceneEngine {
 
     // Shot dead where it stood, before the shooter has moved a boot.
     await this.slay(victim, blow);
+
+    // The eye comes off the sights the moment the body is down: the frame opens
+    // out again while the lens pulls back, so the two reads as one movement.
+    this.closeScope();
 
     void this.tweens.to({
       duration: 0.45,
@@ -2737,6 +2786,50 @@ export class SceneEngine {
       rate: weight.rate * (0.95 + Math.random() * 0.1),
       delay: 0.03 + Math.random() * 0.05,
     });
+  }
+
+  // ------------------------------------------------------------ the sight picture
+
+  /** The sights come up on a body: the UI closes the frame down onto it. */
+  private openScope(victim: PieceView, hold: number): void {
+    this.scopeVictim = victim;
+    this.scopeLive = true;
+    this.callbacks.onScope?.({ phase: "aim", hold });
+  }
+
+  /** The frame the shot leaves the barrel. */
+  private fireScope(): void {
+    if (!this.scopeLive) return;
+    this.callbacks.onScope?.({ phase: "fire", hold: 0 });
+  }
+
+  /**
+   * The eye comes off the sights. Safe to call at any time — including from the
+   * error path of a broken battle beat, which is exactly why it exists.
+   */
+  private closeScope(): void {
+    this.scopeVictim = null;
+    if (!this.scopeLive) return;
+    this.scopeLive = false;
+    this.callbacks.onScope?.(null);
+  }
+
+  /**
+   * Where the sighted body sits on screen, as 0..1 across the canvas. Read once
+   * a frame by the scope overlay so the reticle stays on the target while the
+   * lens is still punching in. False means nothing is sighted, or the target is
+   * behind the camera.
+   */
+  scopeTarget(out: ScreenPoint): boolean {
+    const victim = this.scopeVictim;
+    if (!victim || this.disposed) return false;
+    const projected = SCOPE_PROBE.copy(victim.container.position);
+    projected.y += 0.62;
+    projected.project(this.camera);
+    if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || projected.z > 1) return false;
+    out.x = (projected.x + 1) / 2;
+    out.y = (1 - projected.y) / 2;
+    return true;
   }
 
   /** Where a world point sits across the screen, as a -1..1 stereo position. */
@@ -3806,6 +3899,7 @@ export class SceneEngine {
     this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored);
     this.closePromotionPicker();
+    this.closeScope();
     for (const piece of this.pieces.values()) piece.dispose();
     for (const piece of this.captured) piece.dispose();
     this.pieces.clear();
