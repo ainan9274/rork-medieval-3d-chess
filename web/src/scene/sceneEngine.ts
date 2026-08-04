@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import { ARMY_SKINS, type ArmySkinId, type ArsenalId } from "../assets/generated";
+import { ARMY_SKINS, SHOT_MODEL_URL, type ArmySkinId, type ArsenalId, type GunVoice } from "../assets/generated";
 import type { GameController } from "../core/gameController";
 import type { Faction, GameSnapshot, MoveEvent, PieceKind, SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
@@ -20,6 +20,7 @@ import {
   GUN_LOOK,
   disposeGunAssets,
   flyShot,
+  primeShotModel,
   spawnMuzzleFlash,
   spawnPowderCloud,
 } from "./gunfire";
@@ -414,6 +415,20 @@ interface GunProfile {
   zoom: number;
   /** Held breath between levelling the barrel and firing. */
   aim: number;
+  /** Which recorded barrel this rank fires (see `GUN_AUDIO_URLS`). */
+  voice: GunVoice;
+  /**
+   * How long the firing drill is allowed to take, in seconds, and the fraction
+   * of it at which the ball leaves the muzzle.
+   *
+   * Firearm clips are drills, not swings: the arm comes up, the barrel is
+   * levelled, the head goes down to the sights and only then does the hammer
+   * fall. Played at a swordsman's length the whole thing is over in a third of a
+   * second and the shot looks like a flash appearing out of a stance — which is
+   * exactly what it used to look like. Each barrel therefore names its own
+   * readable length and its own moment of ignition.
+   */
+  drill: { seconds: number; impact: number };
   /** 0 = pistol lock, 0.5 = musket, 1 = field gun — drives the whole mix. */
   calibre: number;
   /** Width of the muzzle flash in world units. */
@@ -459,7 +474,11 @@ const GUNS: Record<PieceKind, GunProfile> = {
   // Officer's flintlock: raised, fired, done. No smoke bank worth the name.
   k: {
     zoom: 7,
-    aim: 0.2,
+    aim: 0.34,
+    voice: "pistol",
+    // A quick draw is meant to be quick, but the pistol still has to be seen to
+    // come up and be pointed before it goes off.
+    drill: { seconds: 1.15, impact: 0.5 },
     calibre: 0.06,
     flash: 0.44,
     ball: 0.06,
@@ -478,7 +497,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
   // Charleville musket: shouldered, a hard crack and a bank of white smoke.
   p: {
     zoom: 5.5,
-    aim: 0.14,
+    aim: 0.3,
+    voice: "musket",
+    // Musket off the shoulder, levelled, fired: the report lands past halfway.
+    drill: { seconds: 1.3, impact: 0.56 },
     calibre: 0.44,
     flash: 0.6,
     ball: 0.075,
@@ -497,7 +519,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
   // Field gun: the crew stands clear, the piece rolls back and the stone rings.
   r: {
     zoom: 10,
-    aim: 0.3,
+    aim: 0.42,
+    voice: "cannon",
+    // The crew steps in to the trail and leans on the lanyard — unhurried.
+    drill: { seconds: 1.25, impact: 0.52 },
     calibre: 1,
     flash: 1.35,
     ball: 0.15,
@@ -520,7 +545,12 @@ const GUNS: Record<PieceKind, GunProfile> = {
   // pale ash grey, sheer enough to see the target through, and gone in a beat.
   b: {
     zoom: 8.5,
-    aim: 0.34,
+    aim: 0.5,
+    voice: "rifle",
+    // The longest drill on the board: down onto the knee, barrel levelled, head
+    // to the sights, breath held, and only then the shot. This is the beat the
+    // sight-picture overlay is paced against.
+    drill: { seconds: 2.1, impact: 0.64 },
     calibre: 0.5,
     flash: 0.5,
     ball: 0.068,
@@ -540,6 +570,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
   q: {
     zoom: 6,
     aim: 0.16,
+    voice: "musket",
+    drill: { seconds: 1.1, impact: 0.5 },
     calibre: 0.4,
     flash: 0.55,
     ball: 0.07,
@@ -558,6 +590,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
   n: {
     zoom: 6,
     aim: 0.16,
+    voice: "musket",
+    drill: { seconds: 1.1, impact: 0.5 },
     calibre: 0.4,
     flash: 0.55,
     ball: 0.07,
@@ -850,6 +884,10 @@ export class SceneEngine {
     if (this.disposed) return;
     this.rebuildPieces();
     this.callbacks.onReady();
+    // The cast ball, fetched behind the game: a few thousand triangles that only
+    // matter the first time somebody pulls a trigger, and a shot falls back to
+    // its additive streak until it lands.
+    void primeShotModel({ url: SHOT_MODEL_URL });
     // The rigs and their stances are in; the strikes, deaths and strides come
     // down behind the game so the first move never waits on seventy GLBs.
     void this.factory.warmClips();
@@ -1922,10 +1960,11 @@ export class SceneEngine {
     this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
     const originalFov = this.camera.fov;
 
-    // Only the rifle carries sights, so only the rifle earns the sight picture:
-    // the frame closes down onto the body for as long as the breath is held.
+    // Only the rifle carries sights, so only the rifle earns the sight picture.
+    // It is deliberately NOT opened yet: the man is seen to shoulder the weapon
+    // and settle on the body in the hall first, and the frame only closes down
+    // once the barrel is already up (below).
     const sighted = attacker.kind === "b";
-    if (sighted) this.openScope(victim, 0.32 + gun.aim, handTremor(from, victimSpot));
     void this.tweens.to({
       duration: 0.26,
       easing: Ease.outCubic,
@@ -1948,21 +1987,45 @@ export class SceneEngine {
       weight: gun.calibre,
       volume: 0.5 + gun.calibre * 0.5,
     });
+
+    // ---- taking aim ----------------------------------------------------
+    // The weapon comes up and is held on the body. A rig that carries a sight
+    // picture loops it here; one that does not leans into the shot by hand, so
+    // every gunner is visibly aiming before anything is fired.
+    const aiming = attacker.playAim(0.18);
+    if (!aiming) {
+      void this.tweens.to({
+        duration: Math.max(0.12, gun.aim),
+        easing: Ease.outCubic,
+        onUpdate: (t) => attacker.setStrikeTilt(-0.1 * t),
+      });
+    }
     await wait(gun.aim);
 
-    // The firing clip doubles as the aim: the shot leaves on the frame the clip
-    // would have landed its blow. A rig whose clip never arrived levels the
-    // barrel by hand instead, so a gunner always visibly fires.
-    const fire = attacker.hasClip("attack") ? attacker.playAttack() : null;
+    // ---- the drill -----------------------------------------------------
+    // The firing clip is played at its own readable length (see GunProfile.drill)
+    // and the shot leaves on the frame the hammer falls, not halfway through the
+    // wind-up. A rig whose clip never arrived levels the barrel by hand instead.
+    const fire = attacker.hasClip("attack")
+      ? attacker.playAttack({ seconds: gun.drill.seconds, impactAt: gun.drill.impact })
+      : null;
     const byHand = !fire || fire.duration <= 0;
+    const untilShot = byHand ? 0.32 : fire.impact;
     if (byHand) {
       await this.tweens.to({
-        duration: 0.26,
+        duration: untilShot,
         easing: Ease.outCubic,
-        onUpdate: (t) => attacker.setStrikeTilt(-0.14 * t),
+        onUpdate: (t) => attacker.setStrikeTilt(-0.14 * (aiming ? 1 : 0.6) - 0.06 * t),
       });
+    } else if (sighted) {
+      // Watch him go down onto the knee and level the barrel in the hall, then
+      // drop in behind the sights for the held breath that ends in the shot.
+      const inTheOpen = Math.min(0.62, untilShot * 0.46);
+      await wait(inTheOpen);
+      this.openScope(victim, Math.max(0.3, untilShot - inTheOpen), handTremor(from, victimSpot));
+      await wait(untilShot - inTheOpen);
     } else {
-      await wait(fire.impact);
+      await wait(untilShot);
     }
 
     // ---- the shot ------------------------------------------------------
@@ -1976,6 +2039,7 @@ export class SceneEngine {
       pan: this.stereoPan(muzzle),
       weight: gun.calibre,
       volume: 1,
+      voice: gun.voice,
     });
     if (sighted) this.fireScope();
     this.shake.add(Math.min(1, 0.3 + gun.calibre * 0.7));
@@ -2041,6 +2105,8 @@ export class SceneEngine {
 
     // ---- the hit -------------------------------------------------------
     const power = gun.blast;
+    // The ball arriving, ahead of the generic capture hit: whine into a thud.
+    audio.ballImpact({ pan: this.stereoPan(chest), volume: Math.min(1.1, 0.7 + gun.calibre * 0.5) });
     audio.play("capture", Math.min(1, 0.7 * power));
     this.strikeImpact(strikeSquare, Math.min(1.5, power));
     this.effects.spawnFlash(chest, Math.min(4.6, 1.9 * power), 0.2);

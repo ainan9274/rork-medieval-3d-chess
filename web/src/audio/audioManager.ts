@@ -1,4 +1,4 @@
-import { ARMY_SKINS, AUDIO_URLS, DEFAULT_ARMY_SKINS } from "../assets/generated";
+import { ARMY_SKINS, AUDIO_URLS, DEFAULT_ARMY_SKINS, GUN_AUDIO_URLS, type GunVoice } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
 
 type SfxName = "place" | "capture" | "check" | "fanfare";
@@ -46,6 +46,15 @@ export interface SpellOptions {
   delay?: number;
   /** How long the charge takes to reach full power (charge only). */
   duration?: number;
+}
+
+/** Placement of one gunshot in the mix, on top of the melee placement. */
+export interface GunSoundOptions extends StrikeSoundOptions {
+  /**
+   * Which recorded barrel to fire. Omitted, the shot is the synthesised voice
+   * alone — which is what every non-gunpowder army has always used.
+   */
+  voice?: GunVoice;
 }
 
 /** Placement of one melee-strike sound in the mix. */
@@ -197,6 +206,9 @@ export class AudioManager {
   /** Decoded death cries keyed by their URL, streamed on demand. */
   private voices = new Map<string, AudioBuffer>();
   private voiceLoads = new Map<string, Promise<void>>();
+  /** Decoded gunfire takes, keyed by URL. Only the powder army needs them. */
+  private shots = new Map<string, AudioBuffer>();
+  private shotLoads = new Map<string, Promise<void>>();
   /**
    * Whose voices each side dies with. Swapped when the player musters a
    * different army, so a French line infantryman never screams like a jaguar
@@ -237,6 +249,7 @@ export class AudioManager {
     // Voices only matter on a capture, so they stream in behind the music
     // rather than holding up the first frame of the game.
     void this.primeDeathCries();
+    void this.primeGunfire();
   }
 
   private async preload(): Promise<void> {
@@ -332,6 +345,68 @@ export class AudioManager {
   setArmyCries(cries: Record<Faction, Record<PieceKind, string>>): void {
     this.cries = { w: cries.w, b: cries.b };
     if (this.ctx) void this.primeDeathCries();
+  }
+
+  /** Warms the recorded barrels in the background once the mixer is alive. */
+  private async primeGunfire(): Promise<void> {
+    await Promise.all(Object.values(GUN_AUDIO_URLS).map((url) => this.loadShot(url)));
+  }
+
+  private loadShot(url: string): Promise<void> {
+    const pending = this.shotLoads.get(url);
+    if (pending) return pending;
+    const job = (async () => {
+      try {
+        const response = await fetch(url);
+        const raw = await response.arrayBuffer();
+        const ctx = this.ctx;
+        if (!ctx) {
+          this.shotLoads.delete(url);
+          return;
+        }
+        this.shots.set(url, await ctx.decodeAudioData(raw));
+      } catch (error) {
+        console.warn("[audio] gunfire take failed to load", error);
+      }
+    })();
+    this.shotLoads.set(url, job);
+    return job;
+  }
+
+  /**
+   * Plays one recorded take, panned to where it happens on screen. Returns false
+   * when the clip has not streamed in yet (and warms it for next time), so the
+   * caller can fall back to its synthesised voice.
+   */
+  private playTake(
+    url: string,
+    options: { pan?: number; volume?: number; delay?: number; rate?: number } = {},
+  ): boolean {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || this.muted) return false;
+    const buffer = this.shots.get(url);
+    if (!buffer) {
+      void this.loadShot(url);
+      return false;
+    }
+    const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = options.rate ?? 1;
+    const gain = ctx.createGain();
+    gain.gain.value = options.volume ?? 1;
+    source.connect(gain);
+    if (typeof ctx.createStereoPanner === "function") {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, options.pan ?? 0)) * 0.6;
+      gain.connect(panner);
+      panner.connect(master);
+    } else {
+      gain.connect(master);
+    }
+    source.start(when);
+    return true;
   }
 
   private async primeDeathCries(): Promise<void> {
@@ -963,12 +1038,23 @@ export class AudioManager {
    *
    * All of it is synthesised, so a volley never waits on a download.
    */
-  gunshot(options: StrikeSoundOptions = {}): void {
+  gunshot(options: GunSoundOptions = {}): void {
     if (!this.ctx || !this.master || this.muted) return;
     const ctx = this.ctx;
     const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
     const calibre = Math.max(0, Math.min(1, options.weight ?? 0.5));
-    const level = (0.34 + calibre * 0.3) * (options.volume ?? 1);
+    // A recorded barrel carries the report; the synthesised voice then only has
+    // to supply the weight underneath it, so the two never fight each other.
+    const recorded =
+      options.voice !== undefined &&
+      this.playTake(GUN_AUDIO_URLS[options.voice], {
+        pan: options.pan,
+        volume: (0.9 + calibre * 0.25) * (options.volume ?? 1),
+        delay: options.delay,
+        // A shade of detune so a volley never repeats the same take verbatim.
+        rate: 0.96 + Math.random() * 0.08,
+      });
+    const level = (0.34 + calibre * 0.3) * (options.volume ?? 1) * (recorded ? 0.42 : 1);
     const bus = this.spellBus(options.pan ?? 0, 0.5);
 
     // The report itself: a very short, very loud burst of noise, filtered lower
@@ -1018,8 +1104,9 @@ export class AudioManager {
     smokeGain.connect(bus);
     smoke.start(when + 0.02);
 
-    // Only a gun is big enough for the hall to answer it.
-    if (calibre > 0.6) {
+    // Only a gun is big enough for the hall to answer it. A recorded cannon
+    // brings its own echo, so the synthesised one would only smear it.
+    if (calibre > 0.6 && !recorded) {
       const echo = ctx.createBufferSource();
       echo.buffer = this.noiseBuffer(0.7, 1.2);
       const walls = ctx.createBiquadFilter();
@@ -1069,6 +1156,20 @@ export class AudioManager {
       gain.connect(bus);
       tick.start(when + step);
     }
+  }
+
+  /**
+   * The ball arriving: a recorded ricochet whine cut short by a thud into the
+   * body. Silent (and warming) until the take has streamed in, because the
+   * capture hit already has its own synthesised weight behind it.
+   */
+  ballImpact(options: StrikeSoundOptions = {}): void {
+    this.playTake(GUN_AUDIO_URLS.impact, {
+      pan: options.pan,
+      volume: 0.85 * (options.volume ?? 1),
+      delay: options.delay,
+      rate: 0.95 + Math.random() * 0.1,
+    });
   }
 
   /** Panned input bus shared by the spell voices. */
@@ -1154,6 +1255,8 @@ export class AudioManager {
     this.beds.clear();
     this.voices.clear();
     this.voiceLoads.clear();
+    this.shots.clear();
+    this.shotLoads.clear();
     this.activeVoices = 0;
     this.bedBus = null;
     void this.ctx?.close();

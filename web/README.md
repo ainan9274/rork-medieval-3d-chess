@@ -193,9 +193,10 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal is the exception: he waits out the turn **down on one knee** with the rifle up, the same kneel his shot is fired from |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the aim — the marshal's is a drop onto one knee with the rifle levelled — and the hit frame is the shot |
+| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the **firing drill** — the marshal's is a drop onto one knee with the rifle levelled — played at its own readable length (`GUNS[kind].drill`), and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
 | `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée's king, bishop, rook and pawn carry one — the bishop's is a kneeling reload, the rook's is served at the muzzle |
+| `aim` | Looping sight picture held *before* the shot: the weapon comes up and stays on the body while the shooter settles (`PieceView.playAim()`). Napoléon and the line infantry carry one; the marshal's kneel and the battery's gun-laying already are the aim |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -249,8 +250,22 @@ to face each other, fire gathers at the staff crystal through the strike clip's 
 flies to the target's chest and breaks open — and the victim **dies and is cleared away before the
 caster takes a single step** onto the square.
 
-The Grande Armée's ranks fight the same distance with powder instead (`playGunCinematic()`), and
-`GUNS[kind]` carries the character of the *smoke* as well as the bore. The marksman's rifled
+The Grande Armée's ranks fight the same distance with powder instead (`playGunCinematic()`). That
+beat is **aim → drill → shot**: the `aim` clip is held for `GUNS[kind].aim` seconds so the barrel is
+seen coming up on the body, then the firing clip runs at its own length with the report on its own
+frame (`GUNS[kind].drill = { seconds, impact }` — the marshal's is 2.1 s firing at 0.64, where the
+swordsman default made the whole kneel-level-fire drill flash past in a third of a second). The
+rifle's sight picture only closes over the interface once the barrel is already up, so the aim is
+watched in the hall first and through the sights second.
+
+The ball itself is a generated mesh (`SHOT_MODEL_URL`, primed by `primeShotModel()`): a cast lead
+Minié bullet pointed down its line of travel and rolling on its axis, with the additive streak
+kept behind it as heat. The sculpt is reported *directionless*, so its measured long axis is taken
+as the nose. Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with
+the synthesised voice dropped to 42 % underneath it for weight, and the ball's arrival has its own
+whine-into-thud (`audio.ballImpact()`). Anything not yet decoded falls back to the synth.
+
+`GUNS[kind]` also carries the character of the *smoke* as well as the bore. The marksman's rifled
 barrel fires a small, tight-patched charge that burns almost completely, so its bank is built from
 `fineSmokeTexture()` — a pale, threadier bloom — tinted a fixed ash grey (`0xdfe4ea`) instead of
 the faction livery, at 0.62 density, and it lifts, tears apart and clears in two-thirds the time

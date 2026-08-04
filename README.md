@@ -348,9 +348,10 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. One exception: the Grande Armée's marshal holds a **kneeling** stance — rifle up, scanning — which is also the kneel his strike fires from, so the shot grows out of the pose instead of restaging it |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the aim (the marshal's is a drop onto one knee), and the hit frame is the shot |
+| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the **firing drill** (the marshal's is a drop onto one knee), played at its own readable length, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
 | `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's four gunpowder ranks carry one; the marshal reloads still kneeling, the battery at the muzzle |
+| `aim` | Looping **sight picture** held before a shot: the weapon comes up and stays on the body while the shooter settles. Napoléon (pistol levelled) and the line infantry (musket into the shoulder, barrel tracking the man) carry one; the marshal and the battery aim through their own drill instead — his kneel and their gun-laying already *are* the aim |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -463,23 +464,47 @@ closes with the sabre. The beat is:
 
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
    or a linstock is heard (`audio.gunLock`) as the barrel comes round.
-2. The strike clip *is* the aim — Napoléon's quick draw, the marshal's drop onto one knee with
-   the rifle levelled, the infantry's shoulder-and-fire, the gun crew's step in to the trail —
-   and the shot leaves on its hit frame. Because the muzzle marker is read out of the live pose,
-   the kneeling shot leaves the barrel at the height the knee put it, not at standing height.
-3. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
+2. **Taking aim.** `PieceView.playAim()` loops the sight picture for `GUNS[kind].aim` seconds
+   (0.3–0.5 s): the weapon is brought up and *held* on the body. A rank with no aim clip leans
+   into the shot by hand instead, so a gunner is always visibly aiming before anything is fired.
+3. **The drill.** The strike clip is then played at its own readable length —
+   `GUNS[kind].drill = { seconds, impact }` — and the shot leaves on the frame the hammer falls
+   (`impact`, 0.5–0.64 of the clip) rather than at the swordsman's default 0.42. This matters: at
+   the default *length* the marshal's kneel-level-fire drill was over in a third of a second and
+   the shot read as a flash appearing out of a stance. His is now the longest beat on the board
+   (2.1 s, firing at 0.64). Because the muzzle marker is read out of the live pose, the kneeling
+   shot leaves the barrel at the height the knee put it, not at standing height.
+4. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
    `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
    smoothbore, pale ash grey for the rifle (see below) — and `audio.gunshot()` fires the report.
-4. `flyShot()` sends the ball **dead straight and fast** — no arc, no easing; the flatness is
+5. `flyShot()` sends the ball **dead straight and fast** — no arc, no easing; the flatness is
    what separates a gun from a lobbed spell — trailing wisps of smoke as it goes.
-5. The hit lands: flash, sparks, tile strike, camera kick, and for the field gun a wave rolling
-   out across the stone plus a long aftershock.
-6. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
+6. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
+   by a thud into the body), then flash, sparks, tile strike, camera kick, and for the field gun a
+   wave rolling out across the stone plus a long aftershock.
+7. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
    the barrel is charged again before `glide()` walks the shooter onto the cleared square.
+
+**The ball is a real mesh.** `SHOT_MODEL_URL` is a generated cast lead Minié bullet, fetched once
+behind the game (`primeShotModel()`) and flown by `flyShot()`: pointed down its own line of travel
+and rolling on its axis all the way to the body, with the additive streak kept behind it as the
+heat around it rather than as the shot itself. The generator reports the sculpt as *directionless*
+(a body of revolution has no intrinsic front), so the loader takes its **measured long axis** as
+the nose instead of guessing a yaw constant, normalises it to one unit nose-to-base and centres it;
+each shot then only scales it by its calibre. Until the GLB lands — or if it never does — every
+gun still fires the streak alone.
+
+**Black powder is recorded, not only synthesised.** `GUN_AUDIO_URLS` holds one take per barrel
+(pistol, musket, rifle, cannon) plus the ball's impact; they stream in behind the music like the
+death cries, and `GUNS[kind].voice` says which one a rank fires. With a take in hand the
+synthesised voice drops to 42 % and only supplies the weight underneath the report (and the
+synthesised wall echo steps aside — a recorded cannon brings its own), with a few per cent of
+detune per shot so a volley never repeats verbatim. Nothing is ever silent: the full synthesised
+voice plays alone until the take has decoded.
 
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
 board — a dry crack, a puff of smoke, no spectacle. The marshal's rifle is the longest held
-breath (0.34 s of aim, the deepest lens punch-in) and the flattest, fastest ball, with less flame
+breath (0.5 s of aim before a 2.1 s drill, the deepest lens punch-in) and the flattest, fastest ball, with less flame
 than the line's musket: a marksman is one clean crack, not a volley. The musket is
 a hard crack over a chest thump and a real bank of white smoke. The field gun is the loudest
 thing in the hall, louder than the crown's judgement: a sub-bass slam with the report coming back

@@ -86,6 +86,12 @@ export interface PieceAnimationSet {
    * gunpowder army carries one — a swordsman has nothing to reload.
    */
   reload?: string;
+  /**
+   * Looping sight picture held before the shot: the arm comes up, the barrel is
+   * levelled on the body and the head sights along it. Only the gunpowder army
+   * carries one — it is what makes a kill at range read as aimed.
+   */
+  aim?: string;
 }
 
 const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
@@ -203,6 +209,9 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     k: {
       rigged: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-rigged.glb`,
       idle: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-idle.glb`,
+      // The coat comes open and the pistol is levelled and held on the man
+      // before the trigger is touched — the hold is what reads as taking aim.
+      aim: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-archery-aim-with-lateral-scan.glb`,
       attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-cowboy-quick-draw-shooting.glb`,
       death: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb`,
       walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
@@ -269,6 +278,9 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     p: {
       rigged: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-rigged.glb`,
       idle: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-combat-stance.glb`,
+      // Musket into the shoulder, cheek down on the stock, barrel tracking the
+      // man across the board: the volley is aimed before it is fired.
+      aim: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-archery-aim-with-lateral-scan.glb`,
       attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-draw-and-shoot-from-back.glb`,
       death: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb`,
       // Musket held across the body at the ready — the line advances, it does
@@ -278,6 +290,15 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     },
   },
 };
+
+/**
+ * The ball the Grande Armée fires: a cast lead Minié bullet, flown as a real
+ * mesh rather than a sprite so a shot crossing the hall reads as a projectile
+ * turning on its own axis. The generator reports it as *directionless* (a body
+ * of revolution has no intrinsic front), so the loader takes its measured long
+ * axis as the nose — see `scene/gunfire.ts`.
+ */
+export const SHOT_MODEL_URL = `${MODEL_BASE}/76d56227-19ad-46cf-b9e8-b84f93bef133.glb`;
 
 /**
  * Orientation verdict reported by the generator for every sculpt:
@@ -400,6 +421,28 @@ export const ARMY_SKIN_ORDER: ArmySkinId[] = ["ivory", "sun", "empire"];
 
 /** Which army each side musters until the player says otherwise. */
 export const DEFAULT_ARMY_SKINS: Record<Faction, ArmySkinId> = { w: "ivory", b: "sun" };
+
+/**
+ * Black powder, recorded rather than synthesised. Each barrel has its own take:
+ * the synthesised voices in the mixer are still played underneath for the
+ * sub-bass and the timing, but what the ear hears on top is a real report.
+ * Streamed lazily after the mixer unlocks — only the Grande Armée needs them.
+ */
+export const GUN_AUDIO_URLS = {
+  /** The Emperor's flintlock: a dry, bright crack. */
+  pistol: `${CRY_BASE}/377fe80d-e159-4eac-b018-6b57dae53464.mp3`,
+  /** A Charleville musket in a stone hall: crack over a chest thump. */
+  musket: `${CRY_BASE}/74b33449-95b4-4cc4-922e-698c66425346.mp3`,
+  /** The marksman's rifled barrel: a tighter, thinner whip-crack. */
+  rifle: `${CRY_BASE}/6b9984fb-0690-4701-b25f-98f7f321396d.mp3`,
+  /** The battery: a boom with the carriage running back over stone under it. */
+  cannon: `${CRY_BASE}/07e2e65a-f7d8-4707-ba93-88e8d4b4969e.mp3`,
+  /** The ball arriving: ricochet whine cut short by a thud into a body. */
+  impact: `${CRY_BASE}/a0f8c443-5140-41f8-b21c-770450ae9751.mp3`,
+} as const;
+
+/** Which recorded barrel each rank of the Grande Armée fires. */
+export type GunVoice = "pistol" | "musket" | "rifle" | "cannon";
 
 export const AUDIO_URLS = {
   ambience: "https://r2-pub.rork.com/generated-audio/g9111r67kl6tq85g540sd/e62d5bb9-8c84-4464-8696-dbcf975f938b.mp3",

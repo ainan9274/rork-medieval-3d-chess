@@ -202,12 +202,18 @@ export interface PieceClips {
    * carries it — a swordsman has nothing to reload.
    */
   reload?: THREE.AnimationClip;
+  /**
+   * Looping sight picture: the barrel up and levelled on a body, held while the
+   * shooter settles. Only the gunpowder army carries one — it is what makes a
+   * shot read as aimed rather than as a flash appearing out of a stance.
+   */
+  aim?: THREE.AnimationClip;
 }
 
 export type ClipName = keyof PieceClips;
 
 /** Every clip a rig can carry, in the order the game needs them. */
-export const CLIP_ORDER: ClipName[] = ["idle", "attack", "death", "walk", "run", "reload"];
+export const CLIP_ORDER: ClipName[] = ["idle", "attack", "death", "walk", "run", "reload", "aim"];
 
 /**
  * Fetched together with the rig itself. Everything else is pulled in afterwards
@@ -336,6 +342,8 @@ export class PieceView {
   private idleLooping = false;
   /** Locomotion loop currently carrying the figure across the board. */
   private marchLoop: MarchClip | null = null;
+  /** True while the figure is holding its aim on a body. */
+  private aiming = false;
   /** Root bone + its bind translation, used to strip clip root motion. */
   private rootBone: THREE.Bone | null = null;
   private rootRest = new THREE.Vector3();
@@ -715,6 +723,34 @@ export class PieceView {
     this.mixer.update(0);
   }
 
+  /**
+   * Brings the weapon up and holds it on the target: a looping sight picture the
+   * caller runs for as long as the shooter is settling. Returns false when this
+   * rig never learned to aim, so the beat can fall back to a hand-driven lean.
+   */
+  playAim(fade = 0.2): boolean {
+    const action = this.actions.get("aim");
+    if (!action || !this.mixer || this.slain) return false;
+    for (const [key, other] of this.actions) {
+      if (key !== "aim") other.fadeOut(Math.max(0.06, fade));
+    }
+    action.reset();
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.clampWhenFinished = false;
+    action.paused = false;
+    // A shade under real time: a man levelling a barrel is deliberate.
+    action.setEffectiveTimeScale(0.85);
+    action.setEffectiveWeight(1);
+    action.fadeIn(fade).play();
+
+    this.activeOneShot = null;
+    this.idleLooping = false;
+    this.marchLoop = null;
+    this.aiming = true;
+    this.lockRootMotion = true;
+    return true;
+  }
+
   /** Crossfades back to the looping combat stance. */
   playIdle(fade = 0.25): void {
     // A stride left running underneath would blend into the stance and keep the
@@ -722,6 +758,11 @@ export class PieceView {
     if (this.marchLoop) {
       this.actions.get(this.marchLoop)?.fadeOut(Math.max(0.06, fade));
       this.marchLoop = null;
+    }
+    // Likewise a held aim: left running it would blend the barrel back up.
+    if (this.aiming) {
+      this.actions.get("aim")?.fadeOut(Math.max(0.06, fade));
+      this.aiming = false;
     }
     const idle = this.actions.get("idle");
     if (!idle) return;
@@ -742,22 +783,27 @@ export class PieceView {
     this.idleLooping = true;
   }
 
-  private playOneShot(name: OneShot): number {
+  /**
+   * @param seconds explicit playback length, overriding the per-rank default.
+   *   A firing drill has to be readable — the shot has to be seen to be aimed —
+   *   so the gun beat asks for a longer, slower take than a sword swing.
+   */
+  private playOneShot(name: OneShot, seconds?: number): number {
     const action = this.actions.get(name);
     if (!action || !this.mixer) return 0;
     const clip = action.getClip();
-    const target = oneShotSeconds(this.kind, name);
-    const timeScale = THREE.MathUtils.clamp(
-      clip.duration / target,
-      this.majestic ? 0.45 : 0.75,
-      this.majestic ? 1.6 : 2.6,
-    );
+    const target = seconds ?? oneShotSeconds(this.kind, name);
+    // An explicitly asked-for length is allowed to slow the clip much further
+    // than a default one: that is the whole point of asking.
+    const floor = seconds !== undefined ? 0.3 : this.majestic ? 0.45 : 0.75;
+    const timeScale = THREE.MathUtils.clamp(clip.duration / target, floor, this.majestic ? 1.6 : 2.6);
     const duration = clip.duration / timeScale;
 
     for (const [key, other] of this.actions) {
       if (key !== name) other.fadeOut(0.1);
     }
     this.marchLoop = null;
+    this.aiming = false;
     action.reset();
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
@@ -775,11 +821,16 @@ export class PieceView {
   /**
    * Starts the strike clip. Returns the playback length and the moment the
    * blade lands, so the caller can time sparks, sound and screen shake.
+   *
+   * @param options `seconds` overrides the playback length and `impactAt` the
+   *   fraction of it at which the blow (or the shot) leaves. Firearms need both:
+   *   their clips are long drills whose report lands well past the halfway mark.
    */
-  playAttack(): { duration: number; impact: number } {
-    const duration = this.playOneShot("attack");
+  playAttack(options: { seconds?: number; impactAt?: number } = {}): { duration: number; impact: number } {
+    const duration = this.playOneShot("attack", options.seconds);
     // The royal wind-up is longer, so the blow lands later in the clip.
-    return { duration, impact: duration * (this.majestic ? 0.56 : 0.42) };
+    const at = options.impactAt ?? (this.majestic ? 0.56 : 0.42);
+    return { duration, impact: duration * THREE.MathUtils.clamp(at, 0.05, 0.95) };
   }
 
   /**
@@ -839,6 +890,7 @@ export class PieceView {
     this.activeOneShot = null;
     this.idleLooping = false;
     this.marchLoop = null;
+    this.aiming = false;
     this.lockRootMotion = true;
     this.container.rotation.set(0, 0, 0);
     this.playIdle(0);

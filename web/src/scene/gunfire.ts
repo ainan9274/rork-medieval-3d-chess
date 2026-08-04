@@ -14,6 +14,7 @@
  */
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import type { Faction } from "../core/types";
 import type { SpellLight } from "./spells";
@@ -37,6 +38,9 @@ export const GUN_LOOK: Record<Faction, GunLook> = {
   w: { flash: 0xfff6dd, ball: 0xffe6b4, smoke: 0xcfd4dc, light: 0xffd9a0 },
   b: { flash: 0xfff1c8, ball: 0xffcf82, smoke: 0xc8bfae, light: 0xffb45e },
 };
+
+/** The frame a normalised ball is authored in: nose along +Z. */
+const FORWARD = new THREE.Vector3(0, 0, 1);
 
 let flashMap: THREE.CanvasTexture | null = null;
 let ballMap: THREE.CanvasTexture | null = null;
@@ -62,6 +66,116 @@ function sharedPuffMap(): THREE.CanvasTexture {
 function sharedFinePuffMap(): THREE.CanvasTexture {
   if (!finePuffMap) finePuffMap = fineSmokeTexture();
   return finePuffMap;
+}
+
+// ---------------------------------------------------------------- the ball
+
+/** Named model axes, as reported by the generator for every sculpt. */
+type AxisName = "positiveX" | "negativeX" | "positiveY" | "negativeY" | "positiveZ" | "negativeZ";
+
+const AXES: Record<AxisName, THREE.Vector3> = {
+  positiveX: new THREE.Vector3(1, 0, 0),
+  negativeX: new THREE.Vector3(-1, 0, 0),
+  positiveY: new THREE.Vector3(0, 1, 0),
+  negativeY: new THREE.Vector3(0, -1, 0),
+  positiveZ: new THREE.Vector3(0, 0, 1),
+  negativeZ: new THREE.Vector3(0, 0, -1),
+};
+
+/** The generated projectile sculpt and the axes it was authored along. */
+export interface ShotModelSource {
+  url: string;
+  /**
+   * Which way the nose of the ball points in the sculpt's own frame, when the
+   * generator reported one. A cast ball is a body of revolution, so it usually
+   * comes back *directionless* — leave this out and the long axis measured off
+   * the mesh is used as the nose instead, which is what a bullet's shape means.
+   */
+  front?: AxisName;
+  /** The sculpt's own up axis. Only meaningful together with `front`. */
+  up?: AxisName;
+}
+
+/**
+ * The cast ball itself, normalised once: nose down the flight line, centred on
+ * its own middle, and one world unit long, so a shot only has to scale it by
+ * its calibre. Null until the sculpt has been fetched (or if it never arrives —
+ * every shot then falls back to the additive streak alone).
+ */
+let ballModel: THREE.Object3D | null = null;
+let ballJob: Promise<void> | null = null;
+
+function basis(front: THREE.Vector3, up: THREE.Vector3): THREE.Quaternion {
+  const f = front.clone().normalize();
+  const r = new THREE.Vector3().crossVectors(up, f).normalize();
+  const u = new THREE.Vector3().crossVectors(f, r).normalize();
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(r, u, f));
+}
+
+/**
+ * The axis a sculpt is longest along, measured off its own bounds. For a cast
+ * ball that is the nose-to-base line by definition, which is why a directionless
+ * projectile can still be flown nose-first without guessing a yaw constant.
+ */
+function longestAxis(model: THREE.Object3D): THREE.Vector3 {
+  const size = new THREE.Vector3();
+  new THREE.Box3().setFromObject(model).getSize(size);
+  if (size.x >= size.y && size.x >= size.z) return new THREE.Vector3(1, 0, 0);
+  if (size.y >= size.z) return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 0, 1);
+}
+
+/** Any unit vector square to the given one — enough to complete a basis. */
+function perpendicular(axis: THREE.Vector3): THREE.Vector3 {
+  return Math.abs(axis.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+}
+
+/**
+ * Fetches the generated ball and prepares it for flight. Called once when the
+ * hall is built; failures are swallowed on purpose — a missing sculpt must never
+ * cost the army its gunfire.
+ */
+export function primeShotModel(source: ShotModelSource): Promise<void> {
+  if (ballJob) return ballJob;
+  ballJob = (async () => {
+    try {
+      const gltf = await new GLTFLoader().loadAsync(source.url);
+      // Rotate the sculpt's own frame onto "nose along +Z, up along +Y", which is
+      // the frame a shot orients along its line of travel. A directionless ball
+      // has no reported front, so its own longest extent is taken as the nose.
+      const oriented = new THREE.Group();
+      const front = source.front ? AXES[source.front] : longestAxis(gltf.scene);
+      const up = source.up ? AXES[source.up] : perpendicular(front);
+      const correction = basis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0))
+        .multiply(basis(front, up).invert());
+      gltf.scene.quaternion.copy(correction);
+      oriented.add(gltf.scene);
+
+      // One unit from nose to base, centred on its own middle.
+      const box = new THREE.Box3().setFromObject(oriented);
+      const size = new THREE.Vector3();
+      const centre = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(centre);
+      const length = Math.max(1e-4, size.z);
+      gltf.scene.position.sub(centre);
+      oriented.scale.setScalar(1 / length);
+
+      oriented.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        // A ball in flight is a handful of pixels crossing the screen in a tenth
+        // of a second; culling it by a stale bounding sphere makes it blink.
+        mesh.frustumCulled = false;
+      });
+      ballModel = oriented;
+    } catch (error) {
+      console.warn("[gunfire] ball sculpt unavailable", error);
+    }
+  })();
+  return ballJob;
 }
 
 /** Frees the shared maps (scene teardown). */
@@ -167,10 +281,20 @@ class Shot {
   private readonly core: THREE.Sprite;
   private readonly trail: THREE.Sprite;
   private readonly light: SpellLight | null;
+  /** The cast ball itself, when the sculpt is in hand. */
+  private readonly ball: THREE.Object3D | null;
+  /** Rifling: the ball turns on its own axis all the way to the body. */
+  private readonly spin = (Math.random() > 0.5 ? 1 : -1) * (26 + Math.random() * 16);
 
   constructor(look: GunLook, size: number, light: SpellLight | null) {
     this.light = light;
     this.group.name = "shot";
+    this.ball = ballModel ? ballModel.clone(true) : null;
+    if (this.ball) {
+      // A cast ball is longer than it is wide; scale by its length.
+      this.ball.scale.setScalar(size * 2.3);
+      this.group.add(this.ball);
+    }
     this.trail = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: sharedBallMap(),
@@ -191,8 +315,9 @@ class Shot {
         opacity: 0.95,
       }),
     );
+    // With a real ball in frame the streak is only the heat around it.
     this.trail.scale.set(size * 3.4, size * 0.9, 1);
-    this.core.scale.setScalar(size);
+    this.core.scale.setScalar(this.ball ? size * 0.7 : size);
     this.trail.renderOrder = 6;
     this.core.renderOrder = 7;
     this.trail.frustumCulled = false;
@@ -202,9 +327,17 @@ class Shot {
 
   place(at: THREE.Vector3, intensity: number): void {
     this.group.position.copy(at);
-    (this.core.material as THREE.SpriteMaterial).opacity = 0.95 * intensity;
+    (this.core.material as THREE.SpriteMaterial).opacity = (this.ball ? 0.6 : 0.95) * intensity;
     (this.trail.material as THREE.SpriteMaterial).opacity = 0.4 * intensity;
     this.light?.set(at, intensity * 4);
+  }
+
+  /** Points the ball down its line of travel and rolls it as it goes. */
+  aimAlong(direction: THREE.Vector3, travelled: number): void {
+    const ball = this.ball;
+    if (!ball) return;
+    ball.quaternion.setFromUnitVectors(FORWARD, direction);
+    ball.rotateZ(travelled * this.spin);
   }
 
   dispose(): void {
@@ -241,7 +374,11 @@ export async function flyShot(
   options: ShotOptions,
 ): Promise<void> {
   const shot = new Shot(options.look, options.size, options.light ?? null);
+  const heading = to.clone().sub(from);
+  const distance = Math.max(1e-4, heading.length());
+  heading.divideScalar(distance);
   shot.place(from, 1);
+  shot.aimAlong(heading, 0);
   scene.add(shot.group);
   const at = new THREE.Vector3();
   try {
@@ -251,6 +388,7 @@ export async function flyShot(
       onUpdate: (t: number) => {
         at.lerpVectors(from, to, t);
         shot.place(at, 1);
+        shot.aimAlong(heading, t * distance);
         options.onTrail?.(at, t);
       },
     });
