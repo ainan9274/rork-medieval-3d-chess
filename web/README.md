@@ -654,17 +654,27 @@ into the same local frame the primitives are authored in — length up `+Y`, but
   muzzle-first, and neither needs a special case.
 - **Roll** from the remaining two axes. A blade keeps its flat across the swing (`±X`, as
   `curvedBlade` authors it) so a sculpted sabre still cuts edge-first; a firearm's lock plane stands
-  in the barrel's plane (`±Z`), with the guard side found by asking which side of the mass the barrel
-  sits on — stock, lock and trigger guard all hang below the bore, so the thin end's centroid points
-  at the top of the gun. That keeps `gunOrientation`'s guard-forward promise true for a mesh nobody
-  rotated by hand.
+  in the barrel's plane (`±Z`), with the guard side found by stepping from the **bore to the stock**:
+  the slice behind the muzzle is bare barrel, the butt quarter is all wood and furniture, and a gun's
+  stock hangs *below* its bore, so the offset between the two points at the underside. That keeps
+  `gunOrientation`'s guard-forward promise true for a mesh nobody rotated by hand.
+
+  This used to be read off the **centroid** — muzzle third against the middle of the whole cloud —
+  which says the same thing only while nothing but the gun pulls that centroid off the bore. The
+  Versailles rifle broke it: its slack sling loops `0.34` of the weapon's length clear of the stock,
+  four times the rifle's own lateral thickness (`0.087`), which dragged the centroid past the barrel.
+  Both long arms were therefore fitted **upside down** — sling arcing over the barrel, lock and
+  trigger guard turned at the sky — on every figure that carried one. The pistol, with no sling to
+  fool it, was right all along and reads the same under either rule.
 
 Only the **fist** and the **bore** are authored, as fractions of the weapon's length, because no
 measurement finds a trigger. Both were read off each sculpt's cross-section profile and land within a
 couple of percent of the props they replace (rifle fist 0.30 vs 0.30, musket bore 0.80 vs 0.77). The
 musket's marker is the bayonet *socket*, not its point — the flash leaves the barrel, not the blade
 beyond it. `armoury.test.ts` throws a primitive sword and musket into a random orientation and checks
-they come back on their butts, point up, guard forward.
+they come back on their butts, point up, guard forward — plus a **slung** musket, whose loop is
+authored far enough off the underside to move the centroid past the bore, so the roll can never
+regress to the centroid test again.
 
 The swap is invisible to everything downstream: the sculpt supplies grip and muzzle, the loadout
 still owns rest angle, wrist offset and `hold`, so the marksman kneels and levels exactly as before.

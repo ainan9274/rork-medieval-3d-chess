@@ -81,6 +81,26 @@ function fakeMusket(): THREE.Object3D {
   return group;
 }
 
+/**
+ * The same long arm with a slack sling, which is what the real Versailles rifle
+ * arrived as: a strap looping far clear of the underside — 0.34 of the weapon's
+ * length on a piece only 0.09 thick laterally. All that loop is on the *guard*
+ * side, so it drags the cloud's centroid past the bore and any roll test read
+ * off the centroid picks the wrong side and fits the gun upside down.
+ */
+function fakeSlungMusket(): THREE.Object3D {
+  const group = new THREE.Group();
+  group.add(fakeMusket().children[0]);
+  const musket = fakeMusket();
+  for (const part of [...musket.children]) group.add(part);
+  const sling = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.008, 6, 20, Math.PI * 1.3));
+  sling.rotation.set(0, Math.PI / 2, 0.6);
+  sling.position.set(0.1, -0.2, 0);
+  group.add(sling);
+  group.rotation.set(-0.7, 1.4, 0.35);
+  return group;
+}
+
 describe("fitArmSculpt", () => {
   it("stands a diagonal sword on its butt with the point up", () => {
     const source: ArmSculptSource = { url: "", length: 0.72, grip: 0.11, family: "blade" };
@@ -133,5 +153,24 @@ describe("fitArmSculpt", () => {
     const barrel = points.filter((point) => point.y > source.length * 0.7);
     const barrelZ = barrel.reduce((sum, point) => sum + point.z, 0) / barrel.length;
     expect(barrelZ).toBeLessThan(0);
+  });
+
+  it("keeps a slung long arm the right way up", () => {
+    const source: ArmSculptSource = {
+      url: "",
+      length: 0.85,
+      grip: 0.3,
+      muzzle: 0.985,
+      family: "firearm",
+    };
+    const { points } = fitted(fakeSlungMusket(), source);
+
+    // The bore stays above the stock however far the sling loops off the gun:
+    // the roll is read from the step between the two, not from the centroid.
+    const bore = points.filter((point) => point.y > source.length * 0.86);
+    const stock = points.filter((point) => point.y < source.length * 0.2);
+    const meanZ = (slice: THREE.Vector3[]): number =>
+      slice.reduce((sum, point) => sum + point.z, 0) / Math.max(1, slice.length);
+    expect(meanZ(bore)).toBeLessThan(meanZ(stock));
   });
 });

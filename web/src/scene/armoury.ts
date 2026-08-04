@@ -356,19 +356,43 @@ export function fitArmSculpt(scene: THREE.Object3D, source: ArmSculptSource): Ar
   const up = longAxis.clone().multiplyScalar(towardPoint);
   let front: THREE.Vector3;
   if (source.family === "firearm") {
-    // The barrel is the thin end, and the stock, lock and trigger guard all hang
-    // below the bore — so the thin end's own centroid points at the *top* of the
-    // gun, and the trigger guard is the other way.
-    let barrelBroad = 0;
-    let barrelCount = 0;
-    for (const point of projected) {
-      const fromPoint = towardPoint > 0 ? max - point.long : point.long - min;
-      if (fromPoint > span / 3) continue;
-      barrelBroad += point.broad;
-      barrelCount += 1;
+    // Roll off the *stock*, not off the centroid. A gun's stock, lock and trigger
+    // guard all hang below the bore, so the step from the barrel line out to the
+    // butt's own mass points at the underside — and the underside is the side the
+    // prop frame calls +Z (level the barrel and {@link gunOrientation} turns it at
+    // the floor).
+    //
+    // Measuring the muzzle end against the whole cloud's centroid says the same
+    // thing only while nothing but the gun pulls that centroid off the bore. On
+    // the Versailles rifle something does: its slack sling loops 0.34 of the
+    // weapon's length clear of the stock — four times the rifle's own lateral
+    // thickness — which dragged the centroid past the barrel and fitted the
+    // sculpt upside down, so every figure carrying it held it guard-up with the
+    // sling arcing over the barrel.
+    const bandBroad = (nearest: number, furthest: number): number | null => {
+      let total = 0;
+      let count = 0;
+      for (const point of projected) {
+        const fromPoint = (towardPoint > 0 ? max - point.long : point.long - min) / span;
+        if (fromPoint < nearest || fromPoint > furthest) continue;
+        total += point.broad;
+        count += 1;
+      }
+      return count > 0 ? total / count : null;
+    };
+    // Bore: the slice just behind the point, which on every one of these is bare
+    // barrel. Stock: the butt quarter, which is all wood and furniture.
+    const bore = bandBroad(0, 0.16);
+    const stock = bandBroad(0.75, 1);
+    const underside = bore !== null && stock !== null ? stock - bore : 0;
+    if (Math.abs(underside) > 0.004 * span) {
+      front = broadAxis.clone().multiplyScalar(Math.sign(underside));
+    } else {
+      // A profile with no offset to read (a derringer, a bare tube): fall back to
+      // the muzzle end against the centroid.
+      const barrelBroad = bandBroad(0, 1 / 3) ?? 0;
+      front = broadAxis.clone().multiplyScalar(barrelBroad < 0 ? 1 : -1);
     }
-    const barrelSide = barrelCount > 0 && barrelBroad < 0 ? -1 : 1;
-    front = broadAxis.clone().multiplyScalar(-barrelSide);
   } else {
     // A blade keeps its flat across the swing, so the thin cross-axis is the one
     // that faces the figure's front.
