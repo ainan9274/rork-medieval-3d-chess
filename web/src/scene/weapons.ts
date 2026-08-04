@@ -480,6 +480,25 @@ function towerShape(width: number, height: number): THREE.Shape {
 
 // ------------------------------------------------------------------- weapons
 
+/**
+ * Rest angle every *drawn* Napoleonic blade is carried at, in body axes.
+ *
+ * These used to rest at `(-0.05, 1, 0.14)`: straight up, leaning a shade toward
+ * the spine. Both halves of that are wrong for a real sword on a real figure.
+ * Straight up means the blade covers the whole torso, and since the fist sits at
+ * about half the figure's height, anything longer than half a body reaches past
+ * the crown; the inward lean then walks it up the *middle* of the silhouette. A
+ * 0.72-long sabre carried that way crosses head height at x = 0.219 — the exact
+ * edge of the bicorne — so from the board's camera the Emperor's own blade is
+ * drawn across his face. It read as a broken model, and it was only a pose.
+ *
+ * Raked out (≈27°) and a little forward (≈15°) instead, the blade leaves the fist
+ * heading away from the body: it clears the shoulder, tops out at jaw height
+ * rather than above the hat, and lands as a diagonal in the open half of the
+ * square — which is how a drawn sabre is actually held when nobody is being cut.
+ */
+const BLADE_AT_REST = new THREE.Vector3(0.5, 1, 0.28);
+
 const WEAPONS: Record<WeaponId, WeaponSpec> = {
   /** King: ceremonial two-handed sword, held blade-up like a standard. */
   greatsword: {
@@ -775,12 +794,16 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
   // ----------------------------------------------------------- Grande Armée
 
   /**
-   * Napoléon: the Emperor's dress sabre — a gilt knuckle-bow hilt under a long
-   * lightly curved blade, carried point-up like a marshal's baton of office.
+   * Napoléon: the Emperor's dress sabre — a gilt knuckle-bow hilt under a
+   * lightly curved blade, drawn and held lowered away from the body.
+   *
+   * Blade shortened from 0.5 while the hilt was left alone, because that is what
+   * a shorter sabre is: a hilt is the size of a hand whatever the blade does.
+   * Total 0.536, matching the sculpt that replaces it (see `ARM_SCULPTS`).
    */
   imperialSabre: {
     grip: 0.095,
-    aim: new THREE.Vector3(-0.05, 1, 0.14),
+    aim: BLADE_AT_REST.clone(),
     offset: new THREE.Vector3(0.02, 0, 0.03),
     build: () => [
       { geometry: shaft(0.16, 0.016, 0.014), role: "leather" },
@@ -790,7 +813,7 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
       { geometry: box(0.13, 0.022, 0.03, 0.176), role: "gold" },
       { geometry: ball(0.019, 0.176, 0.066), role: "gold" },
       { geometry: box(0.05, 0.038, 0.028, 0.2), role: "gold" },
-      ...curvedBlade(0.5, 0.075, 0.02, 0.216, 0.34).map((geometry) => ({
+      ...curvedBlade(0.32, 0.075, 0.02, 0.216, 0.34).map((geometry) => ({
         geometry,
         role: "steel" as const,
       })),
@@ -801,12 +824,12 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
    * the field it was carried on. Everything about it is a gift rather than an
    * issue weapon — an ivory grip bound with gold wire, a laurelled knuckle bow,
    * a brilliant set in the guard and an eagle's head for a pommel — and its
-   * blade is the longest, straightest thing worn at the imperial court. It is
-   * carried in the off hand: her right hand is the one that shoots.
+   * blade is the straightest thing worn at the imperial court. It is carried in
+   * the off hand: her right hand is the one that shoots.
    */
   marengoSword: {
     grip: 0.09,
-    aim: new THREE.Vector3(-0.05, 1, 0.13),
+    aim: BLADE_AT_REST.clone(),
     offset: new THREE.Vector3(0.02, 0, 0.03),
     build: () => [
       // Ivory grip under gold binding wire.
@@ -824,8 +847,8 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
       { geometry: ball(0.017, 0.168, -0.042), role: "gold" },
       { geometry: ball(0.013, 0.176, 0, 0.026), role: "gem" },
       { geometry: box(0.046, 0.034, 0.026, 0.192), role: "gold" },
-      // A long, barely curved court blade — a sabre in name, a sword in line.
-      ...curvedBlade(0.52, 0.07, 0.019, 0.208, 0.22, 6).map((geometry) => ({
+      // A barely curved court blade — a sabre in name, a sword in line.
+      ...curvedBlade(0.37, 0.07, 0.019, 0.208, 0.22, 6).map((geometry) => ({
         geometry,
         role: "steel" as const,
       })),
@@ -874,10 +897,15 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
       { geometry: ring(0.015, 0.005, 0.19), role: "leather" },
     ],
   },
-  /** Cuirassier: the heavy straight-backed cavalry sabre, brass bowl guard. */
+  /**
+   * Cuirassier: the heavy straight-backed cavalry sabre, brass bowl guard.
+   *
+   * The An XI is 111cm overall on a 1.75m trooper, so 0.63 is the true length
+   * and it stays — only the carry is raked out of his own silhouette.
+   */
   cavalrySabre: {
     grip: 0.08,
-    aim: new THREE.Vector3(-0.07, 1, 0.18),
+    aim: BLADE_AT_REST.clone(),
     offset: new THREE.Vector3(0.02, 0, 0.03),
     build: () => {
       const bowl = new THREE.SphereGeometry(0.058, 14, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);

@@ -1006,7 +1006,7 @@ left are real motions off one generated take — `Kneel_on_One_Knee_and_Stand` r
 forwards to come up — rather than crossfades between two heights.
 
 **The gun goes where the arms go.** A prop parented to a hand bone at a fixed body-space angle
-suits a sabre worn point-up, but it leaves a rifle standing straight up through an aiming clip.
+suits a blade at rest, but it leaves a rifle standing straight up through an aiming clip.
 Firearms therefore declare `hold` in `src/scene/weapons.ts` and their angle is re-solved against
 the live skeleton every frame (`AttachedArms.align()`, called right after the mixer): a `longArm`
 takes its barrel line from the vector between the trigger fist and the support fist, so the pose
@@ -1040,6 +1040,20 @@ six are **generated meshes**, listed in `ARM_SCULPTS` (`src/assets/generated.ts`
 | Cuirassier | An XI heavy cavalry sword | Four-branch brass bowl guard, wire-bound grip, flat-backed blade with a wide fuller |
 | Napoléon | General officer's dress sabre | Gilt bronze knuckle-bow hilt, blued and gilt-etched blade |
 | Imperial Commander | Marengo presentation sword | Ivory grip under gold wire, laurel-chased bow, eagle's-head pommel |
+
+**A sword is the length of the real one, and it is held out of the man's own silhouette.** Both are
+easy to get wrong in ways that look like a broken model rather than a wrong number. The Emperor's
+dress sabre was fitted at 0.72 of his height — a 1.26 m blade, longer than the trooper's An XI, on a
+man who stood 1.69 m — and every Napoleonic blade rested at `(-0.05, 1, 0.14)`: straight up, leaning
+a shade *toward* the spine. The fist sits at about half a figure's height, so anything longer than
+half a body reaches past the crown, and the inward lean walks it up the middle of the silhouette:
+that sabre crossed head height at x = 0.219, the exact edge of the bicorne, so from the board's
+camera the Emperor's own blade was drawn across his face. Fixed by measurement, not by taste — the
+dress sabre is 0.54 (95 cm overall, so *shorter* than the cuirassier's 0.63, which was already
+right) and the court sword 0.58, while `BLADE_AT_REST` rakes all three out ≈27° and forward ≈15°.
+The blade now leaves the fist heading away from the body, tops out at jaw height instead of above
+the hat, and reads as a diagonal in the open half of the square. The primitive fallbacks were
+shortened in the blade only, never the hilt: a hilt is the size of a hand whatever the blade does.
 | Napoléon / Commander | An XIII officer's flintlock | Chequered half stock, gilt side plate and butt cap, brass fore-end cap |
 
 The hard part is not downloading them. **A generated weapon arrives in an arbitrary pose**: the

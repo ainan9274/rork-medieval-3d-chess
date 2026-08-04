@@ -581,7 +581,7 @@ trickling 1.5 s after — rather than with a thicker cloud. Every other barrel k
 livery-tinted bank.
 
 **A held firearm has no rest angle.** Blades and staves are parented to a hand bone at a fixed
-body-space angle, which is fine for a sabre worn point-up but leaves a rifle standing upright
+body-space angle, which is fine for a blade at rest but leaves a rifle standing upright
 through an aiming clip. Firearms declare `hold` in `weapons.ts` instead and are re-solved against
 the live skeleton every frame (`AttachedArms.align()`, called right after the mixer):
 

@@ -412,17 +412,25 @@ export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
     family: "blade",
   },
   // A general officer's dress sabre: gilt hilt, blued and gilt-etched blade.
+  //
+  // Length is the real object against the man carrying it, not a guess: an
+  // officer's dress sabre runs about 95cm overall, and Napoléon stood 1.69m —
+  // 1.75m to the crown of the bicorne this sculpt wears. That is 0.54, and it
+  // puts the Emperor's blade *shorter* than the trooper's An XI (0.63) rather
+  // than the longest steel on the board.
   imperialSabre: {
     url: `${MODEL_BASE}/47492c2e-f774-49e0-b2ef-113a02132a50.glb`,
-    length: 0.72,
+    length: 0.54,
     grip: 0.11,
     family: "blade",
   },
   // The presentation sword: ivory grip, laurelled bow, eagle's head pommel.
   // This one arrives hilt-last; the fitter finds the point without being told.
+  // A court sword is the longest, straightest blade worn at the imperial court
+  // and still only about a metre overall — 0.58 of the figure wearing it.
   marengoSword: {
     url: `${MODEL_BASE}/307d49bd-b8c8-44b5-9837-bd55d8c849b6.glb`,
-    length: 0.73,
+    length: 0.58,
     grip: 0.13,
     family: "blade",
   },
