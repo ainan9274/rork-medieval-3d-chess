@@ -295,6 +295,26 @@ barrel fires a small, tight-patched charge that burns almost completely, so its 
 the faction livery, at 0.62 density, and it lifts, tears apart and clears in two-thirds the time
 of a musket's soot. Every other barrel keeps the dirty livery-tinted bank.
 
+**A held firearm has no rest angle.** Blades and staves are parented to a hand bone at a fixed
+body-space angle, which is fine for a sabre worn point-up but leaves a rifle standing upright
+through an aiming clip. Firearms declare `hold` in `weapons.ts` instead and are re-solved against
+the live skeleton every frame (`AttachedArms.align()`, called right after the mixer):
+
+- `"longArm"` (marksman's rifle, line musket) takes the barrel line straight from the pose — the
+  vector from the trigger fist to the support fist. Whatever the clip does, the two hands agree on
+  where the gun points, so a kneeling aim levels the barrel, a march carries it across the body and
+  the muzzle marker follows. A clip whose fists are together, or whose support hand is *behind* the
+  trigger hand, is ignored and the upright carry is kept.
+- `"sidearm"` (the officer's flintlock) follows the forearm through the wrist, lifted toward the
+  figure's front so an arm hanging at rest carries the pistol low rather than aiming at its own boot.
+
+Roll is taken from the barrel pitched a quarter turn about the figure's lateral axis — the one rule
+that holds at both ends of the swing (trigger guard forward when upright, floorward when levelled)
+without flipping in between; projecting the body's front, as the blades do, collapses the moment a
+gun points where the figure is looking. Carried guns are also exempt from the floor-clearance clamp
+that slides grounded shafts up through the fist — that clamp is what had the crouching marksman
+holding his rifle by the butt plate.
+
 The fire's light comes from `SpellLightPool` (`src/scene/spells.ts`): three point lights created
 once with the scene and lent out per bolt. A light per fireball crashed the tab — three.js keys
 its shader programs on the scene's light counts, so the whole hall recompiled mid-fight. Pooled

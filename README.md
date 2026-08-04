@@ -597,6 +597,19 @@ the shot goes, because from there the recoil owns the picture. Like the tracking
 custom properties onto one DOM node inside the same `requestAnimationFrame` loop — zero React
 re-renders and zero extra work for the animation loop.
 
+**The gun goes where the arms go.** A prop parented to a hand bone at a fixed body-space angle
+suits a sabre worn point-up, but it leaves a rifle standing straight up through an aiming clip.
+Firearms therefore declare `hold` in `src/scene/weapons.ts` and their angle is re-solved against
+the live skeleton every frame (`AttachedArms.align()`, called right after the mixer): a `longArm`
+takes its barrel line from the vector between the trigger fist and the support fist, so the pose
+itself levels the rifle when the marksman kneels to aim and carries it across the body on the
+march; a `sidearm` follows the forearm through the wrist, lifted toward the figure's front so a
+hanging arm carries the pistol low instead of aiming at its own boot. Roll comes from the barrel
+pitched a quarter turn about the lateral axis — trigger guard forward when upright, floorward when
+levelled, no flip in between. Carried guns are exempt from the floor-clearance clamp that keeps
+grounded shafts out of the board, which is what had the crouching marksman gripping his rifle by
+the butt plate.
+
 The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
 barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a
 caster's `focus`. The **field gun is a towed prop**, not a held one: it hangs off the sculpt root

@@ -1142,6 +1142,9 @@ export class PieceView {
         this.rootBone.position.x = this.rootRest.x;
         this.rootBone.position.z = this.rootRest.z;
       }
+      // The gun goes where the arms went this frame, not where the stance pose
+      // left it: a levelled barrel is the whole point of an aiming clip.
+      this.arms?.align();
       this.runtime.position.y += (lift - this.runtime.position.y) * Math.min(1, delta * 9);
       this.runtime.rotation.z = 0;
       // Re-applied after the mixer, which owns the pose for the rest of the frame.
@@ -1190,7 +1193,10 @@ export class PieceView {
    * no hover lift, no team glow — the fall has to read as a fall.
    */
   private updateSlain(delta: number): void {
-    if (!this.flat) this.mixer?.update(delta);
+    if (!this.flat) {
+      this.mixer?.update(delta);
+      this.arms?.align();
+    }
     this.updateToken(delta, 0);
     const hitGlow = this.hit * this.hit * 3;
     for (const material of this.materials) {

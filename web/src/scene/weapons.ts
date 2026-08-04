@@ -91,6 +91,19 @@ interface WeaponSpec {
    */
   muzzle?: THREE.Vector3;
   /**
+   * Pose-driven hold, for props that must not keep a fixed rest angle.
+   *
+   * A firearm's whole point is that the barrel goes wherever the arms put it, so
+   * a fixed body-space angle leaves it standing upright through an aiming clip:
+   *  - `"longArm"` — the axis runs from the trigger fist through the support
+   *    fist, so a shouldered or kneeling clip levels the barrel by itself.
+   *  - `"sidearm"` — the axis follows the forearm, lifted toward the figure's
+   *    front so a hanging arm reads as a pistol carried low, not dropped.
+   *
+   * Re-solved every frame from the live skeleton — see {@link AttachedArms.align}.
+   */
+  hold?: "longArm" | "sidearm";
+  /**
    * Not held at all: hauled along beside the figure (the battery's gun). Towed
    * props are authored in body axes — front +Z, up +Y, wheels on ±X — and are
    * parented to the sculpt root rather than to a hand bone, so the crew's arms
@@ -808,8 +821,11 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     grip: 0.26,
     // Barrel mouth, inside the brass nose cap.
     muzzle: new THREE.Vector3(0, 0.835, 0),
+    // Held in two fists: the barrel line is read out of the pose, and `aim` is
+    // only the fallback for a figure whose skeleton never arrived.
+    hold: "longArm",
     aim: new THREE.Vector3(-0.03, 1, 0.06),
-    offset: new THREE.Vector3(0.018, 0, 0.028),
+    offset: new THREE.Vector3(0.014, -0.005, 0.02),
     build: () => [
       // Full walnut stock, butt on the ground end, wrist under the lock.
       { geometry: box(0.032, 0.34, 0.058, 0.175), role: "wood" },
@@ -871,8 +887,9 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     grip: 0.26,
     // The flame leaves the barrel mouth, under the bayonet socket.
     muzzle: new THREE.Vector3(0, 0.665, 0),
+    hold: "longArm",
     aim: new THREE.Vector3(-0.03, 1, 0.06),
-    offset: new THREE.Vector3(0.018, 0, 0.028),
+    offset: new THREE.Vector3(0.014, -0.005, 0.02),
     build: () => [
       { geometry: box(0.032, 0.3, 0.056, 0.15), role: "wood" },
       { geometry: box(0.036, 0.05, 0.075, 0.022), role: "wood" },
@@ -893,9 +910,11 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
   officerPistol: {
     grip: 0.055,
     muzzle: new THREE.Vector3(0, 0.262, 0),
+    // One fist, so the barrel continues the forearm rather than the spine.
+    hold: "sidearm",
     // Barrel forward and a shade up: the arm reads as levelled, not shouldered.
     aim: new THREE.Vector3(-0.2, 0.46, 0.87),
-    offset: new THREE.Vector3(0.03, 0.01, 0.03),
+    offset: new THREE.Vector3(0.022, 0.004, 0.022),
     build: () => [
       { geometry: box(0.028, 0.1, 0.052, 0.05), role: "wood" },
       { geometry: box(0.032, 0.022, 0.058, 0.008), role: "gold" },
@@ -1117,6 +1136,59 @@ function restOrientation(direction: THREE.Vector3, isShield: boolean): THREE.Qua
   return new THREE.Quaternion().setFromRotationMatrix(matrix);
 }
 
+/**
+ * Rotation for a *held firearm*, whose barrel line is `direction` in body axes.
+ *
+ * The roll reference is the barrel itself pitched a quarter turn about the
+ * figure's lateral axis, which is the one rule that reads right at both ends of
+ * the swing: carried upright the trigger guard faces the figure's front, and
+ * levelled at a target it faces the floor, with no flip in between. Projecting
+ * the body's front instead (as {@link restOrientation} does) collapses the
+ * moment a gun points where the figure is looking.
+ */
+function gunOrientation(direction: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
+  const y = axisY.copy(direction).normalize();
+  const reference = axisRef.set(y.x, -y.z, y.y);
+  const z = axisZ.copy(reference).addScaledVector(y, -reference.dot(y));
+  if (z.lengthSq() < 1e-6) {
+    // Barrel exactly across the body: fall back to the front of the sculpt.
+    z.copy(LOCAL_FRONT).addScaledVector(y, -LOCAL_FRONT.dot(y));
+    if (z.lengthSq() < 1e-6) z.copy(LOCAL_FRONT);
+  }
+  z.normalize();
+  const x = axisX.crossVectors(y, z).normalize();
+  return out.setFromRotationMatrix(basisMatrix.makeBasis(x, y, z));
+}
+
+const axisX = new THREE.Vector3();
+const axisY = new THREE.Vector3();
+const axisZ = new THREE.Vector3();
+const axisRef = new THREE.Vector3();
+const basisMatrix = new THREE.Matrix4();
+const boneLocal = new THREE.Matrix4();
+const rootWorldInverse = new THREE.Matrix4();
+const fistPosition = new THREE.Vector3();
+const fistQuaternion = new THREE.Quaternion();
+const fistScale = new THREE.Vector3();
+const partnerPosition = new THREE.Vector3();
+const barrelAxis = new THREE.Vector3();
+const propRotation = new THREE.Quaternion();
+const boneInverse = new THREE.Quaternion();
+
+/** A held prop whose angle is re-solved from the live pose every frame. */
+interface HeldRig {
+  mode: "longArm" | "sidearm";
+  /** Hand the prop hangs off — the trigger fist. */
+  bone: THREE.Bone;
+  /** Support fist (`longArm`) or the forearm the barrel follows (`sidearm`). */
+  partner: THREE.Bone | null;
+  group: THREE.Group;
+  /** Wrist shift in body axes, already mirrored for the holding side. */
+  offset: THREE.Vector3;
+  /** Body-axis angle to fall back on when the pose says nothing usable. */
+  fallback: THREE.Vector3;
+}
+
 function findBone(root: THREE.Object3D, pattern: RegExp): THREE.Bone | null {
   let found: THREE.Bone | null = null;
   root.traverse((node) => {
@@ -1129,6 +1201,63 @@ function findBone(root: THREE.Object3D, pattern: RegExp): THREE.Bone | null {
 
 const RIGHT_HAND = /^(mixamorig)?(right ?hand|hand[_.]?r|r[_.]?hand)$/i;
 const LEFT_HAND = /^(mixamorig)?(left ?hand|hand[_.]?l|l[_.]?hand)$/i;
+
+/** The bone a wrist hangs off (its forearm), or null at the top of the chain. */
+function boneParent(bone: THREE.Bone): THREE.Bone | null {
+  const parent = bone.parent as THREE.Bone | null;
+  return parent?.isBone ? parent : null;
+}
+
+/**
+ * Re-solves every pose-driven prop against the skeleton as it stands.
+ *
+ * Bone world matrices are read as the last frame left them, which is a frame of
+ * lag on the barrel and invisible at 60fps — forcing a second world-matrix pass
+ * over thirty-two skeletons per frame is not.
+ */
+function alignHeld(root: THREE.Object3D, held: HeldRig[], unit: number): void {
+  rootWorldInverse.copy(root.matrixWorld).invert();
+  for (const rig of held) {
+    boneLocal.multiplyMatrices(rootWorldInverse, rig.bone.matrixWorld);
+    boneLocal.decompose(fistPosition, fistQuaternion, fistScale);
+    const boneScale = Math.max(1e-6, (fistScale.x + fistScale.y + fistScale.z) / 3);
+
+    let solved = false;
+    if (rig.partner) {
+      boneLocal.multiplyMatrices(rootWorldInverse, rig.partner.matrixWorld);
+      partnerPosition.setFromMatrixPosition(boneLocal);
+      if (rig.mode === "longArm") {
+        // Trigger fist to support fist: the line the two hands agree on *is* the
+        // barrel, so a kneeling aim, a shouldered carry and a march all read.
+        barrelAxis.copy(partnerPosition).sub(fistPosition);
+        // Fists together (a clip that never held a gun) says nothing; so does a
+        // support hand behind the trigger hand, which would aim at the owner.
+        solved =
+          barrelAxis.lengthSq() > (0.075 * unit) ** 2 &&
+          barrelAxis.z > -0.45 * barrelAxis.length();
+      } else {
+        // Forearm through the wrist, lifted toward the figure's front: an arm
+        // hanging at rest then carries the pistol low instead of at its own boot.
+        barrelAxis.copy(fistPosition).sub(partnerPosition);
+        if (barrelAxis.lengthSq() > (0.02 * unit) ** 2) {
+          barrelAxis.normalize().addScaledVector(LOCAL_FRONT, 0.5).addScaledVector(WORLD_UP, 0.3);
+          solved = true;
+        }
+      }
+    }
+    if (!solved) barrelAxis.copy(rig.fallback);
+
+    gunOrientation(barrelAxis, propRotation);
+    boneInverse.copy(fistQuaternion).invert();
+    rig.group.scale.setScalar(unit / boneScale);
+    rig.group.quaternion.copy(boneInverse).multiply(propRotation);
+    rig.group.position
+      .copy(rig.offset)
+      .multiplyScalar(unit)
+      .applyQuaternion(boneInverse)
+      .divideScalar(boneScale);
+  }
+}
 
 export interface AttachedArms {
   meshes: THREE.Mesh[];
@@ -1151,6 +1280,12 @@ export interface AttachedArms {
    * back on its wheels when it fires. Null for everyone but the battery.
    */
   train: THREE.Object3D | null;
+  /**
+   * Re-solves the angle of every pose-driven prop (see {@link WeaponSpec.hold})
+   * against the skeleton as it stands this frame. Cheap and a no-op for a figure
+   * carrying nothing but blades; call it right after the mixer.
+   */
+  align: () => void;
 }
 
 /**
@@ -1176,8 +1311,11 @@ export function attachWeapons(
     focus: null,
     muzzle: null,
     train: null,
+    align: () => undefined,
   };
   const loadout = LOADOUT[arsenal][kind];
+  /** Props whose angle is re-solved against the live pose every frame. */
+  const held: HeldRig[] = [];
 
   root.updateMatrixWorld(true);
   const rootInverse = root.matrixWorld.clone().invert();
@@ -1231,6 +1369,7 @@ export function attachWeapons(
   const mount = (id: WeaponId, hand: "right" | "left"): void => {
     const spec = WEAPONS[id];
     const bone = findBone(root, hand === "right" ? RIGHT_HAND : LEFT_HAND);
+    const otherHand = spec.hold ? findBone(root, hand === "right" ? LEFT_HAND : RIGHT_HAND) : null;
 
     // Read the fist out of the pose: which side of the spine it sits on (the
     // rig may be mirrored) and how high it is above the soles.
@@ -1256,11 +1395,14 @@ export function attachWeapons(
 
     // Keep butt spikes and shield rims from sinking through the board: the
     // fighting stances crouch, which drops the fist far below a standing pose.
+    // A carried firearm is exempt — it is never grounded, and sliding it up
+    // through the fist to clear the floor is what made the crouching marksman
+    // hold his rifle by the butt plate.
     let grip = spec.grip;
     if (spec.shield) {
       const bottom = handHeight + offset.y - (spec.half ?? 0.18);
       if (bottom < 0.07) offset.y += 0.07 - bottom;
-    } else {
+    } else if (!spec.hold) {
       grip = Math.min(spec.grip, Math.max(0.03, handHeight + offset.y - 0.07));
     }
 
@@ -1281,6 +1423,18 @@ export function attachWeapons(
       group.quaternion.copy(rest);
       group.position.set(lateral * 0.24 * unit, 0.52 * unit, 0.05 * unit);
       root.add(group);
+    }
+
+    if (spec.hold && bone) {
+      held.push({
+        mode: spec.hold,
+        bone,
+        // A long arm is steered by the other fist; a sidearm by its own forearm.
+        partner: spec.hold === "longArm" ? otherHand : boneParent(bone),
+        group,
+        offset: new THREE.Vector3(spec.offset.x * lateral, spec.offset.y, spec.offset.z),
+        fallback: aim.clone(),
+      });
     }
 
     const inner = new THREE.Group();
@@ -1314,5 +1468,12 @@ export function attachWeapons(
   if (loadout.main) mount(loadout.main, "right");
   if (loadout.off) mount(loadout.off, "left");
   if (loadout.train) haul(loadout.train);
+
+  if (held.length > 0) {
+    arms.align = () => alignHeld(root, held, unit);
+    // Solve once now, so the figure is never seen for a frame with its gun at
+    // the angle the fallback guessed.
+    arms.align();
+  }
   return arms;
 }
