@@ -377,6 +377,16 @@ interface GunProfile {
   /** Which recorded barrel this rank fires (see `GUN_AUDIO_URLS`). */
   voice: GunVoice;
   /**
+   * Lock time: seconds from the trigger breaking to the main charge lighting.
+   *
+   * Real, and audible. A flintlock takes 40-70ms to get from the sear releasing
+   * to the ball moving — sear, flint on frizzen, pan flash, then the barrel — and
+   * a field gun touched off at the vent takes longer still. The engine plays the
+   * mechanical half of the shot this far ahead of the report so the ear can hear
+   * the trigger being pulled and then hear the gun answer it.
+   */
+  lock: number;
+  /**
    * How long the firing drill is allowed to take, in seconds, and the fraction
    * of it at which the ball leaves the muzzle.
    *
@@ -481,6 +491,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     zoom: 7,
     aim: 0.34,
     voice: "pistol",
+    // A well-tuned duelling lock: the fastest ignition in the hall.
+    lock: 0.042,
     // A quick draw is meant to be quick, but the pistol still has to be seen to
     // come up and be pointed before it goes off.
     drill: { seconds: 1.15, impact: 0.5 },
@@ -507,6 +519,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     zoom: 5.5,
     aim: 0.3,
     voice: "musket",
+    // A service musket lock, coarse-primed: slower than an officer's pistol.
+    lock: 0.058,
     // Musket off the shoulder, levelled, fired: the report lands past halfway.
     drill: { seconds: 1.3, impact: 0.56 },
     calibre: 0.44,
@@ -534,6 +548,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     zoom: 10,
     aim: 0.42,
     voice: "cannon",
+    // Not a lock at all: a portfire brought down to the vent, the priming taking,
+    // then the charge. By far the longest wait between the order and the boom.
+    lock: 0.12,
     // The crew steps in to the trail and leans on the lanyard — unhurried.
     drill: { seconds: 1.25, impact: 0.52 },
     calibre: 1,
@@ -573,6 +590,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     // starts: dropping into the kneel *is* his aim now.
     aim: 0.62,
     voice: "rifle",
+    // A marksman's piece, hand-fitted and finely primed — a fast lock, because a
+    // slow one throws the shot off at the range he is expected to hit at.
+    lock: 0.038,
     // Still the longest drill on the board — knee down, barrel levelled, head to
     // the sights, breath held, then the shot — but no longer stretched to fill an
     // overlay, so it plays closer to the speed a man actually moves at.
@@ -613,6 +633,7 @@ const GUNS: Record<PieceKind, GunProfile> = {
     zoom: 7.5,
     aim: 0.4,
     voice: "pistol",
+    lock: 0.046,
     drill: { seconds: 1.35, impact: 0.54 },
     calibre: 0.12,
     flare: 4.6,
@@ -636,6 +657,8 @@ const GUNS: Record<PieceKind, GunProfile> = {
     zoom: 6,
     aim: 0.16,
     voice: "musket",
+    // A carbine lock, worked from the saddle: quick and a little rough.
+    lock: 0.052,
     drill: { seconds: 1.1, impact: 0.5 },
     calibre: 0.4,
     flare: 4.6,
@@ -2101,14 +2124,30 @@ export class SceneEngine {
     const byHand = !fire || fire.duration <= 0;
     const untilShot = byHand ? 0.32 : fire.impact;
     if (byHand) {
-      await this.tweens.to({
+      // The lean is no longer awaited: the two waits below own the clock, so the
+      // trigger and the report keep their spacing whether or not a clip arrived.
+      void this.tweens.to({
         duration: untilShot,
         easing: Ease.outCubic,
         onUpdate: (t) => attacker.setStrikeTilt(-0.14 * (aiming ? 1 : 0.6) - 0.06 * t),
       });
-    } else {
-      await wait(untilShot);
     }
+
+    // ---- the trigger ---------------------------------------------------
+    // A muzzle-loader is two sounds, not one. The sear breaks, the flint rakes
+    // the frizzen and the pan flashes; the charge in the barrel lights one lock
+    // time later. So the mechanical half is played `gun.lock` seconds *before*
+    // the report, and the report itself still lands on the authored ignition
+    // frame alongside the muzzle flash. That is what makes the shot audibly
+    // belong to the finger that pulled it rather than merely happening near it.
+    const lock = Math.min(gun.lock, untilShot * 0.5);
+    await wait(untilShot - lock);
+    audio.triggerPull({
+      pan: this.stereoPan(attacker.muzzleOrigin()),
+      weight: gun.calibre,
+      volume: 0.8 + gun.calibre * 0.4,
+    });
+    await wait(lock);
 
     // ---- the shot ------------------------------------------------------
     const muzzle = attacker.muzzleOrigin();

@@ -83,6 +83,53 @@ export interface WoodTapOptions {
   delay?: number;
 }
 
+/**
+ * One decoded gunfire take, with the two things about it that cannot be trusted
+ * to be authored correctly: where the shot actually begins, and how loud the
+ * recording happens to be.
+ */
+interface ShotTake {
+  buffer: AudioBuffer;
+  /**
+   * Seconds of lead-in before the report itself. Playback starts here, so the
+   * transient lands on the frame the caller asked for rather than however long
+   * after it the recording happened to open.
+   */
+  onset: number;
+  /** Peak sample of the take, used to level every barrel to the same headroom. */
+  peak: number;
+}
+
+/**
+ * Peak every recorded take is normalised to. Generated clips come back anywhere
+ * between 0.18 and 1.55 full-scale — a 9x spread. Left alone, the authored
+ * per-barrel mix means nothing, because the recording level swamps it.
+ */
+const TAKE_PEAK = 0.92;
+/** Bounds on that correction, so a hissy take is never boosted into noise. */
+const TAKE_GAIN_RANGE: readonly [number, number] = [0.3, 3.4];
+
+/**
+ * How each recorded barrel sits against the synthesised voice underneath it.
+ *
+ * The two are not interchangeable. A take with a hard, close transient (the
+ * Charleville) carries the whole report on its own and only wants the synth for
+ * the sub-bass; a diffuse take (the flintlock, whose recording is mostly hall)
+ * needs the synthesised crack left much further up or the shot has no edge on
+ * the frame it happens. Authored per barrel, because “how good is this
+ * recording” is not something `calibre` can express.
+ */
+const SHOT_VOICES: Record<GunVoice, { take: number; synth: number }> = {
+  /** Quietest kill on the board by design — the recording is mostly room. */
+  pistol: { take: 0.74, synth: 0.6 },
+  /** The hardest transient of the four: it needs almost nothing under it. */
+  musket: { take: 1, synth: 0.34 },
+  /** A thin whip-crack; the synth supplies the body it does not have. */
+  rifle: { take: 0.88, synth: 0.5 },
+  /** Carries its own hall, but none of the sub-bass a field gun owes the room. */
+  cannon: { take: 0.96, synth: 0.52 },
+};
+
 /** Head-room for the voices so a scream never clips over the score. */
 const CRY_VOLUME = 0.85;
 /** Simultaneous voices — beyond this the mix turns to mush. */
@@ -207,7 +254,7 @@ export class AudioManager {
   private voices = new Map<string, AudioBuffer>();
   private voiceLoads = new Map<string, Promise<void>>();
   /** Decoded gunfire takes, keyed by URL. Only the powder army needs them. */
-  private shots = new Map<string, AudioBuffer>();
+  private shots = new Map<string, ShotTake>();
   private shotLoads = new Map<string, Promise<void>>();
   /**
    * Whose voices each side dies with. Swapped when the player musters a
@@ -364,7 +411,7 @@ export class AudioManager {
           this.shotLoads.delete(url);
           return;
         }
-        this.shots.set(url, await ctx.decodeAudioData(raw));
+        this.shots.set(url, this.analyseTake(await ctx.decodeAudioData(raw)));
       } catch (error) {
         console.warn("[audio] gunfire take failed to load", error);
       }
@@ -374,9 +421,74 @@ export class AudioManager {
   }
 
   /**
+   * Finds where a recorded shot actually starts, and how hot it was recorded.
+   *
+   * A generated sound effect is a *clip*, not an event: it opens with whatever
+   * room tone the model felt like, and the report can sit anywhere inside it.
+   * Played from sample zero the ear hears the flash first and the bang after,
+   * which is exactly the desync this exists to kill.
+   *
+   * The onset is taken from the loudest moment rather than from the first sample
+   * over a threshold: threshold-crossing latches onto room tone (or onto a flint
+   * scrape) and reports 0ms for a take whose crack is really 170ms in. So find
+   * the loudest 4ms window, walk *backwards* to where the energy was still a
+   * small fraction of it — the foot of the attack — and refine to the sample
+   * inside that window where the waveform first moves.
+   */
+  private analyseTake(buffer: AudioBuffer): ShotTake {
+    const data = buffer.getChannelData(0);
+    const rate = buffer.sampleRate;
+    let peak = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      const value = Math.abs(data[i]);
+      if (value > peak) peak = value;
+    }
+    if (peak <= 0) return { buffer, onset: 0, peak: 1 };
+
+    // Energy envelope in 4ms windows: short enough to resolve a transient, long
+    // enough that one stray sample cannot pass for one.
+    const window = Math.max(1, Math.round(rate * 0.004));
+    const windows = Math.ceil(data.length / window);
+    const energy = new Float32Array(windows);
+    let loudest = 0;
+    for (let w = 0; w < windows; w += 1) {
+      const start = w * window;
+      const end = Math.min(data.length, start + window);
+      let sum = 0;
+      for (let i = start; i < end; i += 1) sum += data[i] * data[i];
+      energy[w] = Math.sqrt(sum / Math.max(1, end - start));
+      if (energy[w] > energy[loudest]) loudest = w;
+    }
+
+    // Foot of the attack: the last quiet window before the loudest one.
+    const floor = energy[loudest] * 0.14;
+    let start = loudest;
+    while (start > 0 && energy[start - 1] > floor) start -= 1;
+
+    // Refine inside that window so the crack is not clipped by up to 4ms.
+    let onset = start * window;
+    const limit = Math.min(data.length, onset + window);
+    for (let i = onset; i < limit; i += 1) {
+      if (Math.abs(data[i]) >= peak * 0.05) {
+        onset = i;
+        break;
+      }
+    }
+    // Never trim into the shot itself: the attack keeps two milliseconds of
+    // run-up so it still reads as a hard edge rather than a truncated click.
+    onset = Math.max(0, onset - Math.round(rate * 0.002));
+    return { buffer, onset: onset / rate, peak };
+  }
+
+  /**
    * Plays one recorded take, panned to where it happens on screen. Returns false
    * when the clip has not streamed in yet (and warms it for next time), so the
    * caller can fall back to its synthesised voice.
+   *
+   * Two corrections are applied to every take, both measured off the audio
+   * rather than authored: playback starts at the shot's own onset, so the report
+   * lands on the instant the caller asked for, and the level is normalised, so
+   * `volume` means the same thing whichever barrel is talking.
    */
   private playTake(
     url: string,
@@ -385,17 +497,18 @@ export class AudioManager {
     const ctx = this.ctx;
     const master = this.master;
     if (!ctx || !master || this.muted) return false;
-    const buffer = this.shots.get(url);
-    if (!buffer) {
+    const take = this.shots.get(url);
+    if (!take) {
       void this.loadShot(url);
       return false;
     }
     const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = take.buffer;
     source.playbackRate.value = options.rate ?? 1;
     const gain = ctx.createGain();
-    gain.gain.value = options.volume ?? 1;
+    const match = Math.max(TAKE_GAIN_RANGE[0], Math.min(TAKE_GAIN_RANGE[1], TAKE_PEAK / take.peak));
+    gain.gain.value = (options.volume ?? 1) * match;
     source.connect(gain);
     if (typeof ctx.createStereoPanner === "function") {
       const panner = ctx.createStereoPanner();
@@ -405,7 +518,8 @@ export class AudioManager {
     } else {
       gain.connect(master);
     }
-    source.start(when);
+    // The offset is the whole point: the transient starts here, not the file.
+    source.start(when, take.onset);
     return true;
   }
 
@@ -1036,7 +1150,8 @@ export class AudioManager {
    * - `1` — a field gun: the crack is buried under a sub-bass slam that rolls
    *   away down the hall, with the report coming back off the far wall.
    *
-   * All of it is synthesised, so a volley never waits on a download.
+   * The synthesised half never waits on a download, so a volley always fires on
+   * time even if a take is still streaming in.
    */
   gunshot(options: GunSoundOptions = {}): void {
     if (!this.ctx || !this.master || this.muted) return;
@@ -1045,16 +1160,20 @@ export class AudioManager {
     const calibre = Math.max(0, Math.min(1, options.weight ?? 0.5));
     // A recorded barrel carries the report; the synthesised voice then only has
     // to supply the weight underneath it, so the two never fight each other.
+    const mix = options.voice !== undefined ? SHOT_VOICES[options.voice] : null;
     const recorded =
       options.voice !== undefined &&
+      mix !== null &&
       this.playTake(GUN_AUDIO_URLS[options.voice], {
         pan: options.pan,
-        volume: (0.9 + calibre * 0.25) * (options.volume ?? 1),
+        volume: mix.take * (0.9 + calibre * 0.25) * (options.volume ?? 1),
         delay: options.delay,
         // A shade of detune so a volley never repeats the same take verbatim.
-        rate: 0.96 + Math.random() * 0.08,
+        // Kept tight: a big rate change would drag the transient off the frame
+        // the trigger broke on, which is the one thing this must not do.
+        rate: 0.98 + Math.random() * 0.045,
       });
-    const level = (0.34 + calibre * 0.3) * (options.volume ?? 1) * (recorded ? 0.42 : 1);
+    const level = (0.34 + calibre * 0.3) * (options.volume ?? 1) * (recorded && mix ? mix.synth : 1);
     const bus = this.spellBus(options.pan ?? 0, 0.5);
 
     // The report itself: a very short, very loud burst of noise, filtered lower
@@ -1156,6 +1275,88 @@ export class AudioManager {
       gain.connect(bus);
       tick.start(when + step);
     }
+  }
+
+  /**
+   * The trigger breaking, and the priming charge catching behind it.
+   *
+   * A muzzle-loader does not go off the instant the finger moves. The sear
+   * releases, the flint rakes the frizzen, the pan flashes, and only then does
+   * the main charge in the barrel light — forty to seventy milliseconds later on
+   * a flintlock, longer on a gun being touched off with a portfire. That gap is
+   * lock time, and it is the reason a real shot sounds like *two* events rather
+   * than one: a small dry mechanical noise, then the report.
+   *
+   * This is the first of the two. It is played on the frame the trigger is
+   * pulled; {@link gunshot} follows one lock time behind it, on the frame the
+   * muzzle flash is drawn. Without it, the report is the only thing the ear gets,
+   * and the moment the finger moved is inaudible.
+   *
+   * @param options `weight` 0 is a pistol lock, 1 is a field gun's vent
+   */
+  triggerPull(options: StrikeSoundOptions = {}): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    const ctx = this.ctx;
+    const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
+    const weight = Math.max(0, Math.min(1, options.weight ?? 0.4));
+    const level = 0.16 * (options.volume ?? 1);
+    const bus = this.spellBus(options.pan ?? 0, 0.5);
+    // A gun is not held: it is touched off at the vent, so there is iron and a
+    // fuse rather than a sear and a spring.
+    const gun = weight > 0.75;
+
+    // The sear letting go: the shortest, driest sound in the whole beat.
+    const sear = ctx.createBufferSource();
+    sear.buffer = this.noiseBuffer(0.018, 9);
+    const snap = ctx.createBiquadFilter();
+    snap.type = "bandpass";
+    snap.Q.value = 6.5;
+    snap.frequency.value = gun ? 1500 : 4300 - weight * 1100;
+    const searGain = ctx.createGain();
+    searGain.gain.setValueAtTime(level * (gun ? 1.2 : 0.9), when);
+    searGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.035);
+    sear.connect(snap);
+    snap.connect(searGain);
+    searGain.connect(bus);
+    sear.start(when);
+
+    // Flint raking down the frizzen — small arms only. A very short bright
+    // scrape, falling as the cock swings through.
+    if (!gun) {
+      const scrape = ctx.createBufferSource();
+      scrape.buffer = this.noiseBuffer(0.026, 2.2);
+      const steel = ctx.createBiquadFilter();
+      steel.type = "bandpass";
+      steel.Q.value = 1.6;
+      steel.frequency.setValueAtTime(6200, when + 0.004);
+      steel.frequency.exponentialRampToValueAtTime(2800, when + 0.03);
+      const scrapeGain = ctx.createGain();
+      scrapeGain.gain.setValueAtTime(0.0001, when + 0.004);
+      scrapeGain.gain.exponentialRampToValueAtTime(level * 0.55, when + 0.009);
+      scrapeGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.032);
+      scrape.connect(steel);
+      steel.connect(scrapeGain);
+      scrapeGain.connect(bus);
+      scrape.start(when + 0.004);
+    }
+
+    // The priming charge catching: a thin hiss that runs right up to the report,
+    // so the two read as one chain of events rather than two separate sounds. A
+    // gun's fuse burns lower and longer than powder flashing in a pan.
+    const flash = ctx.createBufferSource();
+    const span = gun ? 0.075 : 0.03;
+    flash.buffer = this.noiseBuffer(span + 0.01, 0.7);
+    const air = ctx.createBiquadFilter();
+    air.type = "highpass";
+    air.frequency.value = gun ? 1700 : 3100;
+    const flashGain = ctx.createGain();
+    flashGain.gain.setValueAtTime(0.0001, when + 0.008);
+    flashGain.gain.exponentialRampToValueAtTime(level * (gun ? 0.7 : 0.5), when + 0.008 + span * 0.7);
+    flashGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.012 + span);
+    flash.connect(air);
+    air.connect(flashGain);
+    flashGain.connect(bus);
+    flash.start(when + 0.008);
   }
 
   /**

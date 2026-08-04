@@ -255,7 +255,7 @@ flies to the target's chest and breaks open — and the victim **dies and is cle
 caster takes a single step** onto the square.
 
 The Grande Armée's ranks fight the same distance with powder instead (`playGunCinematic()`). That
-beat is **aim → drill → shot**: the `aim` clip is held for `GUNS[kind].aim` seconds so the barrel is
+beat is **aim → drill → trigger → shot**: the `aim` clip is held for `GUNS[kind].aim` seconds so the barrel is
 seen coming up on the body, then the firing clip runs at its own length with the report on its own
 frame (`GUNS[kind].drill = { seconds, impact }` — the marshal's is 1.7 s firing at 0.6, where the
 swordsman default made the whole kneel-level-fire drill flash past in a third of a second). The
@@ -322,9 +322,25 @@ All four are flown as *generated* sculpts (`SHOT_MODELS`, primed by `primeShotMo
 is reported *directionless*, so its measured long axis is taken as the nose. A kind whose GLB has not
 landed yet is forged procedurally instead, so gunfire never waits on a download.
 
-Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with the synthesised
-voice dropped to 42 % underneath it for weight, and the ball's arrival has its own whine-into-thud
-(`audio.ballImpact()`). Anything not yet decoded falls back to the synth.
+Each barrel also fires a recorded take (`GUN_AUDIO_URLS` + `GUNS[kind].voice`) with a per-barrel
+amount of synthesised voice left underneath it for weight (`SHOT_VOICES` — 34 % under the musket's
+hard transient, 60 % under the flintlock's much more diffuse one), and the ball's arrival has its own
+whine-into-thud (`audio.ballImpact()`). Anything not yet decoded falls back to the synth.
+
+**Every take is aligned and levelled off the audio itself**, because a generated sound effect is a
+clip rather than an event. `analyseTake()` finds each shot's true onset — from the loudest 4 ms window
+walked *backwards* to the foot of the attack, since a threshold crossing just latches onto the room
+tone — and playback starts there, so the report lands on the frame it is asked for. The first set of
+barrels measured 54 ms of silence in front of the musket's crack and did not peak until 171 ms in on
+the rifle: the shot was seen, then heard. Levels are normalised to a common peak as well, since
+recordings came back across a 9× spread that swamped the authored mix.
+
+**The trigger is its own sound.** `GUNS[kind].lock` is real lock time — the 38–120 ms a muzzle-loader
+takes to get from the sear releasing to the charge in the barrel lighting. `audio.triggerPull()`
+(sear break, flint on the frizzen, priming hiss) fires on the frame the trigger is pulled and
+`audio.gunshot()` follows one lock time later, on the same frame as the muzzle flash. The marksman's
+hand-fitted piece has the fastest ignition on the board; the field gun's vent has the slowest, with a
+longer, lower fuse hiss in place of the flint scrape.
 
 **The arrival breaks the body open** (`src/scene/shatter.ts`, `spawnImpactShatter()`). The far end of
 a shot used to be the same warm sprite burst as a sword blow, which reads as magic rather than as

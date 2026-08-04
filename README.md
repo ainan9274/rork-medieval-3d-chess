@@ -484,7 +484,8 @@ The Grande Armée does not fight with witchfire. `attackStyle(kind, arsenal)` in
 still closes with the sabre. The beat is:
 
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
-   or a linstock is heard (`audio.gunLock`) as the barrel comes round.
+   or a linstock is heard (`audio.gunLock`) as the barrel comes round — that is the hammer being
+   *cocked*, a beat before the trigger is anywhere near it.
 2. **Taking aim.** `PieceView.playAim()` loops the sight picture for `GUNS[kind].aim` seconds
    (0.3–0.62 s): the weapon is brought up and *held* on the body. For the marshal this is also the
    drop onto one knee — his hold is the longest on the board so the knee actually reaches the stone
@@ -498,22 +499,26 @@ still closes with the sabre. The beat is:
    (1.7 s, firing at 0.6) — it was 2.1 s only because it had a full-screen sight picture to fill.
    Because the muzzle marker is read out of the live pose, the kneeling shot leaves the barrel at
    the height the knee put it, not at standing height.
-4. `spawnMuzzleFlash()` detonates the charge at the barrel mouth (see *The flash at the bore*),
-   `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
-   smoothbore, pale ash grey for the rifle (see *The powder bank*) — `boreTrickle()` keeps the
-   barrel smoking in the man's hands afterwards, and `audio.gunshot()` fires the report.
-5. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
+4. **The trigger breaks**, `GUNS[kind].lock` seconds before the charge lights. `audio.triggerPull()`
+   plays the sear letting go, the flint raking down the frizzen and the priming charge catching — the
+   mechanical half of a shot (see *Lock time*).
+5. One lock time later the gun answers: `spawnMuzzleFlash()` detonates the charge at the barrel
+   mouth (see *The flash at the bore*), `spawnPowderCloud()` leaves a bank of smoke hanging in front
+   of the gun — soot for a smoothbore, pale ash grey for the rifle (see *The powder bank*) —
+   `boreTrickle()` keeps the barrel smoking in the man's hands afterwards, and `audio.gunshot()`
+   fires the report on the same frame as the flash.
+6. `flyShot()` sends the round **flat and fast** — no arc, no easing; the flatness is what
    separates a gun from a lobbed spell — trailing wisps of smoke as it goes. A ball out of a
    *smoothbore* bellies off the line of sight and comes back onto the body (see below); the rifled
    round is the only one that flies a true line.
-6. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
+7. The hit lands: the ball's own arrival first (`audio.ballImpact()` — a ricochet whine cut short
    by a thud into the body), then flash, sparks, tile strike, camera kick, and for the field gun a
    wave rolling out across the stone plus a long aftershock. The body **breaks open** where the round
    went in — a punch ring square to the flight line, a cone of spall thrown back at the shooter and a
    field of tumbling chips made of the victim's own material (see *The moment the round arrives*).
    **Solid shot does not stop in the man**: a second short flight carries the iron a tile and a half
    past him and skips it off the stone, throwing stone chips and a ricochet spark shower.
-7. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
+8. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
    the barrel is charged again before `glide()` walks the shooter onto the cleared square.
 
 ### The ammunition
@@ -705,11 +710,50 @@ preset, and the hole throws a borrowed point light for a fifth of a second on `p
 
 **Black powder is recorded, not only synthesised.** `GUN_AUDIO_URLS` holds one take per barrel
 (pistol, musket, rifle, cannon) plus the ball's impact; they stream in behind the music like the
-death cries, and `GUNS[kind].voice` says which one a rank fires. With a take in hand the
-synthesised voice drops to 42 % and only supplies the weight underneath the report (and the
-synthesised wall echo steps aside — a recorded cannon brings its own), with a few per cent of
-detune per shot so a volley never repeats verbatim. Nothing is ever silent: the full synthesised
-voice plays alone until the take has decoded.
+death cries, and `GUNS[kind].voice` says which one a rank fires. Nothing is ever silent: the full
+synthesised voice plays alone until the take has decoded.
+
+Two things about a generated take cannot be taken on trust, and `analyseTake()` measures both off
+the audio at decode time rather than believing the file:
+
+- **Where the shot actually starts.** A generated sound effect is a *clip*, not an event: it opens
+  with whatever room tone the model felt like. The first set of barrels was measured at **54 ms of
+  silence in front of the Charleville's crack**, and the rifled barrel did not reach its peak until
+  **171 ms in**. Played from sample zero on the frame the hammer fell, the report therefore landed
+  three to ten frames *after* the muzzle flash — the shot was seen, then heard. Playback now starts
+  at the take's own onset, so the transient lands on the requested instant. The onset is found from
+  the **loudest** 4 ms window and then walked *backwards* to the foot of the attack; a plain
+  threshold crossing is useless here, because it latches onto the room tone and calls a clip whose
+  crack is 170 ms deep “aligned at 0 ms”.
+- **How loud it happens to be.** Recording levels came back anywhere between 0.18 and 1.55
+  full-scale — a 9× spread that swamped the authored per-barrel mix entirely. Every take is now
+  normalised to a common peak (clamped, so a hissy one is never boosted into noise), which is what
+  makes `volume` mean the same thing whichever barrel is talking.
+
+How much synthesised voice stays underneath is then authored **per barrel** in `SHOT_VOICES`, not
+derived from the calibre — “how good is this recording” is not something a bore diameter can
+express. The musket's take has the hardest transient of the four and keeps only 34 % of the synth
+beneath it; the flintlock's recording is mostly hall, so it keeps 60 % or the shot has no edge on
+the frame it happens. A recorded cannon brings its own wall echo, so the synthesised one steps
+aside. Per-shot detune is deliberately kept to a couple of per cent: a larger rate change would
+drag the transient off the frame the trigger broke on, which is the one thing this must not do.
+
+#### Lock time
+
+A muzzle-loader is **two** sounds, not one. The sear releases, the flint rakes the frizzen, the pan
+flashes — and only then does the main charge in the barrel light, 40–70 ms later on a flintlock and
+longer on a gun touched off at the vent with a portfire. That gap is lock time, and it is the whole
+reason a real shot sounds like a chain of events rather than a single bang.
+
+`GUNS[kind].lock` states it per barrel and the engine plays the two halves apart: `audio.triggerPull()`
+— the sear breaking, the flint scrape, then a thin hiss of priming powder running right up to the
+report — fires on the frame the trigger is pulled, and `audio.gunshot()` follows one lock time behind
+it, on the same frame as the muzzle flash. The marksman's hand-fitted piece is the fastest ignition
+on the board (38 ms — a slow lock throws the shot off at the range he is expected to hit at), the
+service musket is coarse-primed and slower (58 ms), and the field gun's vent is by far the longest
+wait between the order and the boom (120 ms), with a lower, longer fuse hiss instead of a flint
+scrape. Without this the report is the only thing the ear ever gets, and the moment the finger moved
+is inaudible.
 
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
 board — a dry crack, a puff of smoke, no spectacle. The marshal's rifle is the longest held

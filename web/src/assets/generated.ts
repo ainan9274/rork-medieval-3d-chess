@@ -474,16 +474,25 @@ export const DEFAULT_ARMY_SKINS: Record<Faction, ArmySkinId> = { w: "ivory", b: 
  * the synthesised voices in the mixer are still played underneath for the
  * sub-bass and the timing, but what the ear hears on top is a real report.
  * Streamed lazily after the mixer unlocks — only the Grande Armée needs them.
+ *
+ * These four barrels were re-recorded to start *on the transient*. The previous
+ * set was generated as ordinary sound effects, which meant each one opened with
+ * room tone before the shot: the Charleville had 54ms of silence in front of its
+ * crack and the rifled barrel did not peak until 171ms in. Played from sample
+ * zero on the frame the hammer fell, the report therefore arrived three to ten
+ * frames *after* the muzzle flash — the shot was seen, then heard. The mixer now
+ * also finds each take's true onset at decode time (see `analyseTake`), so a
+ * regenerated clip that still carries a lead-in is trimmed rather than trusted.
  */
 export const GUN_AUDIO_URLS = {
   /** The Emperor's flintlock: a dry, bright crack. */
-  pistol: `${CRY_BASE}/377fe80d-e159-4eac-b018-6b57dae53464.mp3`,
+  pistol: `${CRY_BASE}/a8cbcada-acce-4a51-8690-974d0e50a68a.mp3`,
   /** A Charleville musket in a stone hall: crack over a chest thump. */
-  musket: `${CRY_BASE}/74b33449-95b4-4cc4-922e-698c66425346.mp3`,
+  musket: `${CRY_BASE}/b042be28-3bb5-48e8-b0a5-ef7a1fbec2d5.mp3`,
   /** The marksman's rifled barrel: a tighter, thinner whip-crack. */
-  rifle: `${CRY_BASE}/6b9984fb-0690-4701-b25f-98f7f321396d.mp3`,
+  rifle: `${CRY_BASE}/9ab8b947-9b2c-4cfc-8b26-653be55a6451.mp3`,
   /** The battery: a boom with the carriage running back over stone under it. */
-  cannon: `${CRY_BASE}/07e2e65a-f7d8-4707-ba93-88e8d4b4969e.mp3`,
+  cannon: `${CRY_BASE}/65e94019-873c-478d-a688-e76d01bb73a3.mp3`,
   /** The ball arriving: ricochet whine cut short by a thud into a body. */
   impact: `${CRY_BASE}/a0f8c443-5140-41f8-b21c-770450ae9751.mp3`,
 } as const;
