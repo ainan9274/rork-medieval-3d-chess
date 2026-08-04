@@ -1346,7 +1346,7 @@ export class SceneEngine {
     for (const entry of this.controller.getBoard()) {
       const view = this.factory.create(entry.kind, entry.color, {
         contactShadows: settings.contactShadows,
-        idleAnimation: settings.characterAnimations,
+        idleAnimation: settings.idleAnimations,
         rankBadge: this.rankBadges,
       });
       if (this.tactical) view.setFlat(true);
@@ -1497,7 +1497,7 @@ export class SceneEngine {
       this.pieces.delete(event.to);
       const view = this.factory.create(event.promotion, event.color, {
         contactShadows: QUALITY_SETTINGS[this.preset].contactShadows,
-        idleAnimation: QUALITY_SETTINGS[this.preset].characterAnimations,
+        idleAnimation: QUALITY_SETTINGS[this.preset].idleAnimations,
         rankBadge: this.rankBadges,
       });
       if (this.tactical) view.setFlat(true);
@@ -1587,7 +1587,11 @@ export class SceneEngine {
     const settings = QUALITY_SETTINGS[this.preset];
     const distance = from.distanceTo(to);
     const gait = GAITS[piece.kind];
-    const wantsLegs = !this.tactical && settings.characterAnimations && piece.hasAnimations;
+    // Walking is not a luxury the graphics preset gets to take away: a march is
+    // one mixer for a second or two, the same cost as the strike and the death
+    // clips that already play on every preset. Only the flat tactical map (where
+    // no sculpt is on screen) and a sculpt with no rig at all fall back to a slide.
+    const wantsLegs = !this.tactical && piece.hasAnimations;
     // The stride has to be in hand *before* the move is staged, not merely
     // downloaded at some point: the opening move is made seconds after the board
     // stands up, which is exactly when the stride clips are still in the air.

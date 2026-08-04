@@ -609,7 +609,7 @@ export class PieceView {
     if (this.badge) this.badge.visible = !enabled && this.badgeWanted && !this.slain;
     if (this.token) this.token.visible = enabled;
     // A strike frozen mid-clip while the board was flat has to be released.
-    if (!enabled && !this.slain && this.mixer) this.playIdle(0.2);
+    if (!enabled && !this.slain && this.mixer) this.returnToStance(0.2);
   }
 
   /** Screen-up direction, in board yaw — keeps every stamped rank readable. */
@@ -739,12 +739,11 @@ export class PieceView {
     this.mixer.addEventListener("finished", (event) => {
       const action = (event as unknown as { action: THREE.AnimationAction }).action;
       if (this.activeOneShot === "attack" && action === this.actions.get("attack")) {
-        this.playIdle(0.2);
+        this.returnToStance(0.2);
       }
     });
 
-    if (idleEnabled) this.playIdle(0);
-    else this.poseFromIdle();
+    this.returnToStance(0);
   }
 
   /**
@@ -828,14 +827,46 @@ export class PieceView {
   /** Ends the march and eases the figure back into its combat stance. */
   stopMarch(fade = 0.22): void {
     if (!this.marchLoop) return;
-    this.playIdle(fade);
+    this.returnToStance(fade);
   }
 
-  /** Freezes the first stance frame so "low" quality still reads as a fighter. */
-  private poseFromIdle(): void {
+  /**
+   * Hands the body back to its resting stance after a march, a strike or an aim.
+   * Whether that stance *breathes* is the preset's call, but leaving the march
+   * running is nobody's: on the lowest preset this used to fall through to
+   * {@link playIdle} anyway, so a figure that was meant to stand perfectly still
+   * started breathing the moment it finished its first move.
+   */
+  private returnToStance(fade: number): void {
+    if (this.idleWanted) {
+      this.playIdle(fade);
+      return;
+    }
+    if (this.marchLoop) {
+      this.actions.get(this.marchLoop)?.fadeOut(Math.max(0.06, fade));
+      this.marchLoop = null;
+      this.settleTrain();
+    }
+    if (this.aiming) {
+      this.actions.get("aim")?.fadeOut(Math.max(0.06, fade));
+      this.aiming = false;
+    }
+    this.activeOneShot = null;
+    this.idleLooping = false;
+    this.lockRootMotion = true;
+    this.poseFromIdle(fade);
+  }
+
+  /**
+   * Freezes the first stance frame so "low" quality still reads as a fighter.
+   * Faded in rather than cut when something was moving underneath it, so the
+   * walk does not snap to attention on the last frame of a move.
+   */
+  private poseFromIdle(fade = 0): void {
     const idle = this.actions.get("idle");
     if (!idle || !this.mixer) return;
     idle.reset().play();
+    if (fade > 0.01) idle.fadeIn(fade);
     idle.paused = true;
     this.mixer.update(0);
   }

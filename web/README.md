@@ -232,8 +232,18 @@ How it is wired (`src/scene/pieces.ts`):
 - Clip root motion is stripped on X/Z so a figure never walks off its square; the death clip
   keeps its motion so the fall reads properly. Locomotion clips are **in-place** cycles — board
   travel belongs to the container tween, so a clip carrying root translation would double it.
-- The **Low** preset freezes the stance on its first frame (no per-frame mixer cost); strikes,
-  deaths and footstep sounds still play, and the figure slides instead of marching.
+- **The preset governs the stance, not animation.** `idleAnimations` (off on **Low**) is the
+  ambient breath — thirty-two skeletons ticked every frame — and without it a figure holds the
+  first frame of its stance. The **stride, strike and death play on every preset**; a march is
+  one mixer for a second or two. Only the flat tactical map and a rig-less sculpt fall back to a
+  slide. `returnToStance()` hands the body back honouring the preset, so a `Low` figure does not
+  start breathing once it has finished a move.
+- One `characterAnimations` flag used to gate the stance *and* the walk cycle, and
+  `detectQualityPreset()` puts touch devices on **Low** — so every phone slid statues while the
+  same figures swung and died in full animation. `navigator.deviceMemory` is Chromium-only, so
+  iOS reported nothing, the unknown was defaulted to 4 GiB and tested against `>= 6`: no iPhone
+  ever cleared it. Unknown memory is no longer read as a small device, and a current phone opens
+  on **Medium**.
 - **Clips load in waves.** Over seventy GLBs fired at once made the browser drop requests
   (`TypeError: Failed to fetch`), which cost figures their strike — a capture then looked like a
   piece dying untouched. The rig plus its `idle` load first, then `PieceFactory.warmClips()`

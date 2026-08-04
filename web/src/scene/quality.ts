@@ -20,12 +20,17 @@ export interface QualitySettings {
   maxPixelRatio: number;
   captureParticles: number;
   /**
-   * Skeletal looping clips: the combat stance every figure holds and the walk /
-   * run cycle it crosses the board with. Off, figures slide to their square
-   * instead of marching (footstep sounds still play) and one-shots — strikes and
-   * deaths — always run.
+   * The ambient combat stance every figure holds — thirty-two skeletons breathing
+   * every frame, which is the part of skeletal animation that actually costs
+   * something. Off, the figures hold the first frame of their stance instead.
+   *
+   * This is deliberately *not* a switch on animation as a whole: the stride a
+   * figure crosses the board on, its strike and its death are one or two mixers
+   * for a second or two and run on every preset. Bundling the walk cycle in here
+   * is what left phones sliding statues around the board — mobile lands on `low`
+   * by default, so the entire rank read as having lost its animation.
    */
-  characterAnimations: boolean;
+  idleAnimations: boolean;
   /** Instanced silhouette soldiers drawn up per distant army. */
   troopCount: number;
   /** Lit camp pyres outside the walls (each one is a real point light). */
@@ -53,7 +58,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     emberCount: 0,
     maxPixelRatio: 1,
     captureParticles: 18,
-    characterAnimations: false,
+    idleAnimations: false,
     troopCount: 60,
     campfires: 0,
     ashCount: 0,
@@ -76,7 +81,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     emberCount: 60,
     maxPixelRatio: 1.5,
     captureParticles: 34,
-    characterAnimations: true,
+    idleAnimations: true,
     troopCount: 140,
     campfires: 2,
     ashCount: 70,
@@ -99,7 +104,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     emberCount: 120,
     maxPixelRatio: 2,
     captureParticles: 60,
-    characterAnimations: true,
+    idleAnimations: true,
     troopCount: 240,
     campfires: 3,
     ashCount: 130,
@@ -122,7 +127,7 @@ export const QUALITY_SETTINGS: Record<QualityPreset, QualitySettings> = {
     emberCount: 190,
     maxPixelRatio: 2,
     captureParticles: 90,
-    characterAnimations: true,
+    idleAnimations: true,
     troopCount: 320,
     campfires: 4,
     ashCount: 220,
@@ -136,12 +141,19 @@ export const QUALITY_ORDER: QualityPreset[] = ["low", "medium", "high", "ultra"]
 /**
  * First-run guess from the GPU string, core count and memory. The engine then
  * measures real frame times for a few seconds and steps down if needed.
+ *
+ * `navigator.deviceMemory` is Chromium-only: Safari and every iPhone report
+ * nothing at all. Defaulting the unknown to 4 GiB and then demanding 6 sent
+ * *every* iOS device to `low` on the first frame, which is how phones ended up
+ * on the one preset that had the stride switched off.
  */
 export function detectQualityPreset(): QualityPreset {
   if (typeof window === "undefined") return "high";
   const isTouch = window.matchMedia("(pointer: coarse)").matches;
   const cores = navigator.hardwareConcurrency ?? 4;
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
+  const reported = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  // Absence is not evidence of a small device: only judge memory when it is known.
+  const memory = reported ?? Number.POSITIVE_INFINITY;
 
   let renderer = "";
   try {
@@ -159,7 +171,9 @@ export function detectQualityPreset(): QualityPreset {
   const strongGpu = /(rtx|radeon rx|apple m[1-9]|geforce gtx 1[06-9]|arc a)/.test(renderer);
 
   if (weakGpu || cores <= 2 || memory <= 2) return "low";
-  if (isTouch) return cores >= 8 && memory >= 6 ? "medium" : "low";
+  // A current phone holds `medium` comfortably, and the frame-rate watchdog
+  // below steps it back down if this one cannot.
+  if (isTouch) return cores >= 4 && memory >= 3 ? "medium" : "low";
   if (strongGpu && cores >= 8 && memory >= 8) return "ultra";
   if (cores >= 6 && memory >= 4) return "high";
   return "medium";
