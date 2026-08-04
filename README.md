@@ -350,7 +350,7 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | Clip | When it plays |
 | --- | --- |
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. One exception: the Grande Armée's marshal holds a **kneeling** stance — rifle up, scanning — which is also the kneel his strike fires from, so the shot grows out of the pose instead of restaging it |
-| `walk` | Looping in-place stride, retimed to the cadence of the move that is under way. It must be a **full gait cycle**: a 0.5 s sprint cycle stretched across a single square reads as juddering on the spot, which is why the line infantry advances on the musket-across-the-body walk instead of the rifle charge that sits on the same rig |
+| `walk` | Looping in-place stride, retimed to the cadence of the move that is under way. The clip's own stride length is **measured** rather than assumed (`gaitCycle()`), because the generator hands back anything from one cycle (`spear-walk`, 1.13 s) to three (`casual-walk`, 4.23 s). It must still be a *walk*: a 0.5 s sprint cycle stretched across a single square reads as juddering on the spot, which is why the line infantry advances on the musket-across-the-body walk instead of the rifle charge that sits on the same rig |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
 | `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the **firing drill** (the marshal's is a drop onto one knee), played at its own readable length, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
@@ -396,11 +396,21 @@ How it is wired (`src/scene/pieces.ts`):
 2. `steps = tiles × stepsPerTile`, and the move's duration is `steps / cadence` — a longer
    move takes **more steps**, not a faster slide.
 3. `PieceView.startMarch(clip, stepRate)` retimes the walk cycle so one gait cycle equals two
-   footfalls at exactly that rate, so the skeleton cannot drift out of the clock.
+   footfalls at exactly that rate, so the skeleton cannot drift out of the clock. The cycle
+   length is **read out of the clip** by autocorrelating a leg bone's swing (`gaitCycle()`,
+   cached per clip). Treating the whole clip as one cycle is what cost the heavy ranks their
+   march: `casual-walk-inplace` — the king's, the queen's, the tower's and the battery's stride —
+   is 4.23 s of *three* cycles, so the time scale asked for was 3-4× and saturated the ceiling.
+   The legs then whirred at the same fixed blur regardless of the move, out of step with the
+   footfall clock, and the tower in particular read as sliding with no animation at all.
 4. `strideEasing()` gives the move a push-off, a constant-speed cruise and a settle. A fully
    eased curve would leave the feet skating at both ends against a fixed cadence.
 5. Each whole step crossing fires `audio.footstep()` (panned by screen position, alternating
    feet, pitch-jittered) plus a small grit puff at the contact point.
+6. The battery hauls a gun rather than carrying one, so while it marches its carriage pitches on
+   the axle once per footfall and rocks wheel to wheel (`rumbleTrain()`, set back down level by
+   `settleTrain()`). A field gun gliding beside a walking crew was the other half of the tower
+   looking unanimated.
 
 Footsteps are fully synthesised in `src/audio/audioManager.ts` — a low body thump for the
 weight, a band-passed noise transient for the sole, and a metallic afterring for armour, one

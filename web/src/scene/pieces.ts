@@ -277,6 +277,108 @@ function oneShotSeconds(kind: PieceKind, name: OneShot): number {
 /** Clips that play once and hand the body back to its stance afterwards. */
 type OneShot = "attack" | "death" | "reload";
 
+/** Measured stride period per clip, so a clip is only ever analysed once. */
+const GAIT_PERIODS = new WeakMap<THREE.AnimationClip, number>();
+
+/** Leg bones, in the order they answer the question "how long is one stride?". */
+const LEG_BONES = [/upleg/i, /thigh/i, /(^|[^a-z])leg/i, /foot/i];
+
+/**
+ * Length of **one** stride cycle (two footfalls) inside a locomotion clip, in
+ * seconds.
+ *
+ * The generator does not hand back one cycle per clip: `spear-walk` is a single
+ * 1.13s cycle, but `casual-walk` is 4.23s of *three* cycles, `confident-strut`
+ * 2.7s of two and `sneaky-walk` 2.9s of two and a half. Retiming a clip as if
+ * its whole length were one cycle therefore asked the mixer for a 3-4x time
+ * scale, which saturated the ceiling in {@link PieceView.startMarch}: the legs
+ * whirred at a fixed blur no matter how far the figure was going, out of step
+ * with the footfall clock, and the march stopped reading as walking at all.
+ * The heavy ranks felt it worst — king, queen and tower all march on
+ * `casual-walk`.
+ *
+ * The period is read out of the clip itself (autocorrelation of a leg bone's
+ * swing) so a swapped-in stride is measured rather than guessed, and cached
+ * per clip because the answer never changes.
+ */
+function gaitCycle(clip: THREE.AnimationClip): number {
+  const cached = GAIT_PERIODS.get(clip);
+  if (cached !== undefined) return cached;
+  const period = measureGaitCycle(clip);
+  GAIT_PERIODS.set(clip, period);
+  return period;
+}
+
+function measureGaitCycle(clip: THREE.AnimationClip): number {
+  const track = findLegTrack(clip);
+  // Nothing leg-shaped to read: treat the clip as the single cycle it usually is.
+  if (!track || track.times.length < 12) return clip.duration;
+
+  // Signal: how far the leg has swung away from its first frame. One walk cycle
+  // brings it back, so the signal's period is the stride's period.
+  const frames = track.times.length;
+  const signal = new Float32Array(frames);
+  for (let i = 0; i < frames; i += 1) {
+    let dot = 0;
+    for (let c = 0; c < 4; c += 1) dot += track.values[i * 4 + c] * track.values[c];
+    signal[i] = 2 * Math.acos(Math.min(1, Math.abs(dot)));
+  }
+
+  let mean = 0;
+  for (const value of signal) mean += value;
+  mean /= frames;
+  let energy = 0;
+  for (let i = 0; i < frames; i += 1) {
+    signal[i] -= mean;
+    energy += signal[i] * signal[i];
+  }
+  // A leg that never swings (a clip driving something other than a gait).
+  if (energy < 1e-6) return clip.duration;
+
+  // Autocorrelation, taken at the first peak *after* the curve has fallen away
+  // from lag zero — the global maximum would happily answer with two strides.
+  const limit = Math.floor(frames * 0.8);
+  const correlation = new Float32Array(limit);
+  for (let lag = 0; lag < limit; lag += 1) {
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i + lag < frames; i += 1) {
+      sum += signal[i] * signal[i + lag];
+      count += 1;
+    }
+    correlation[lag] = sum / count / (energy / frames);
+  }
+  let lag = 1;
+  while (lag < limit && correlation[lag] > 0.1) lag += 1;
+  let period = 0;
+  for (; lag < limit - 1; lag += 1) {
+    if (correlation[lag] > correlation[lag - 1] && correlation[lag] >= correlation[lag + 1]) {
+      if (correlation[lag] > 0.55) period = lag;
+      break;
+    }
+  }
+  if (period <= 0) return clip.duration;
+
+  const step = (track.times[frames - 1] - track.times[0]) / (frames - 1);
+  const seconds = period * step;
+  // A period within a hair of the whole clip is the whole clip; anything shorter
+  // than a third of a second is noise, not a stride.
+  if (seconds < 0.3 || seconds > clip.duration * 0.8) return clip.duration;
+  return seconds;
+}
+
+/** The most swing-heavy leg track in a clip: upper leg first, toes last. */
+function findLegTrack(clip: THREE.AnimationClip): THREE.QuaternionKeyframeTrack | null {
+  for (const pattern of LEG_BONES) {
+    for (const track of clip.tracks) {
+      if (!track.name.endsWith(".quaternion")) continue;
+      if (track.values.length / 4 !== track.times.length) continue;
+      if (pattern.test(track.name)) return track as THREE.QuaternionKeyframeTrack;
+    }
+  }
+  return null;
+}
+
 /**
  * One rendered figure. Follows the placement contract:
  * container (board placement) → runtime (idle sway, strikes) → visual
@@ -349,6 +451,8 @@ export class PieceView {
   private idleLooping = false;
   /** Locomotion loop currently carrying the figure across the board. */
   private marchLoop: MarchClip | null = null;
+  /** Footfalls a second the current march is being walked at. */
+  private marchRate = 0;
   /** True while the figure is holding its aim on a body. */
   private aiming = false;
   /** Root bone + its bind translation, used to strip clip root motion. */
@@ -693,9 +797,13 @@ export class PieceView {
     if (!action || !this.mixer || this.slain) return false;
     const clip = action.getClip();
     const cycles = Math.max(0.15, stepRate * 0.5);
+    // Retimed against the clip's *own* stride length rather than its total
+    // length: several of the generated strides hold three cycles back to back
+    // (see {@link gaitCycle}), and pretending otherwise pinned the heavy ranks
+    // to the ceiling below — legs blurring on the spot while the body slid.
     // Clamped so a very long or very short move never turns the stride into a
     // slideshow or a sprint of blurred legs.
-    const timeScale = THREE.MathUtils.clamp(cycles * clip.duration, 0.4, 2.8);
+    const timeScale = THREE.MathUtils.clamp(cycles * gaitCycle(clip), 0.4, 2.9);
 
     for (const [key, other] of this.actions) {
       if (key !== name) other.fadeOut(0.16);
@@ -711,6 +819,8 @@ export class PieceView {
     this.activeOneShot = null;
     this.idleLooping = false;
     this.marchLoop = name;
+    // The realised cadence, so a hauled gun can jolt on the same clock.
+    this.marchRate = Math.max(0.2, stepRate);
     this.lockRootMotion = true;
     return true;
   }
@@ -765,6 +875,7 @@ export class PieceView {
     if (this.marchLoop) {
       this.actions.get(this.marchLoop)?.fadeOut(Math.max(0.06, fade));
       this.marchLoop = null;
+      this.settleTrain();
     }
     // Likewise a held aim: left running it would blend the barrel back up.
     if (this.aiming) {
@@ -996,6 +1107,30 @@ export class PieceView {
     train.rotation.x = -jump * 0.2;
   }
 
+  /**
+   * A hauled gun carriage crossing stone: the trail pitches on the axle once per
+   * footfall and the whole piece rocks slowly from wheel to wheel. Without it the
+   * battery's gun slid along beside a walking crew, which read as the whole rank
+   * having lost its animation.
+   */
+  private rumbleTrain(elapsed: number): void {
+    const train = this.arms?.train;
+    if (!train) return;
+    const jolt = Math.sin(elapsed * this.marchRate * Math.PI * 2 + this.phase);
+    train.rotation.x = jolt * 0.022;
+    train.rotation.z = Math.sin(elapsed * this.marchRate * Math.PI + this.phase) * 0.014;
+    train.position.y = Math.abs(jolt) * 0.008;
+  }
+
+  /** Sets the hauled gun back down level once the march is over. */
+  private settleTrain(): void {
+    const train = this.arms?.train;
+    if (!train) return;
+    train.rotation.x = 0;
+    train.rotation.z = 0;
+    train.position.y = 0;
+  }
+
   /** World point the hauled gun carriage stands at, or null if nothing is towed. */
   trainOrigin(): THREE.Vector3 | null {
     const train = this.arms?.train;
@@ -1145,6 +1280,9 @@ export class PieceView {
       // The gun goes where the arms went this frame, not where the stance pose
       // left it: a levelled barrel is the whole point of an aiming clip.
       this.arms?.align();
+      // A field gun does not glide: while its crew marches, the carriage jolts
+      // over the stone on the same clock as the boots.
+      if (this.marchLoop) this.rumbleTrain(elapsed);
       this.runtime.position.y += (lift - this.runtime.position.y) * Math.min(1, delta * 9);
       this.runtime.rotation.z = 0;
       // Re-applied after the mixer, which owns the pose for the rest of the frame.
