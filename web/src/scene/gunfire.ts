@@ -20,6 +20,7 @@ import type { Faction } from "../core/types";
 import { AMMUNITION, type AmmoKind, type AmmoSpec, disposeAmmunition, loadRound } from "./ammunition";
 import type { SpellLight } from "./spells";
 import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture, tracerTexture } from "./textures";
+import { TracerStreak } from "./tracer";
 
 /** How one army's powder burns. Both sides use the same charge; only the
  * livery tint of the smoke differs, so a volley always reads as gunpowder
@@ -439,10 +440,10 @@ export async function spawnMuzzleFlash(
  *
  * Three things carry the read, in order of importance:
  *
- * 1. **The smear.** A cone of blurred metal trailing the round down its own
- *    flight line, brightest at the nose and gone a ball's-length behind. This
- *    is what the eye actually tracks; a bare sphere at this size cannot be
- *    followed at all.
+ * 1. **The smear.** A cone of blurred metal on the nose of the round, brightest
+ *    where the metal is and gone a couple of calibres behind it. It rides with
+ *    the round; the path it has flown is drawn separately (see
+ *    {@link TracerStreak}), which is what the eye actually follows.
  * 2. **The glint.** A small billboard of caught torchlight on the metal, so the
  *    round registers even against the dark far wall of the hall.
  * 3. **The heat.** Only iron out of a field gun: a dull glow that cools as it
@@ -473,7 +474,7 @@ class Shot {
   private readonly axis: THREE.Vector3;
   private readonly spin: number;
   /** Rendered diameter of the round: the bore, opened up to a legible gauge. */
-  private readonly gauge: number;
+  readonly gauge: number;
 
   constructor(kind: AmmoKind, look: GunLook, size: number, light: SpellLight | null) {
     const spec = AMMUNITION[kind];
@@ -515,8 +516,8 @@ class Shot {
         side: THREE.DoubleSide,
       }),
     );
-    // Wide as the round at the nose, a handful of calibres long behind it.
-    this.smear.scale.set(gauge, gauge, gauge * spec.streak.stretch);
+    // Wide as the round at the nose, a couple of calibres long behind it.
+    this.smear.scale.set(gauge, gauge, gauge * spec.streak.stretch * NOSE_BLUR);
     this.smear.renderOrder = 6;
     this.smear.frustumCulled = false;
     this.group.add(this.smear);
@@ -602,7 +603,7 @@ class Shot {
     this.round.quaternion.setFromUnitVectors(FORWARD, direction);
     this.round.rotateOnAxis(this.axis, travelled * this.spin);
     this.smear.quaternion.setFromUnitVectors(FORWARD, direction);
-    this.smear.scale.z = this.gauge * this.spec.streak.stretch * haste;
+    this.smear.scale.z = this.gauge * this.spec.streak.stretch * NOSE_BLUR * haste;
     // The wake of dragged air hangs behind the smear.
     this.wake?.position.copy(direction).multiplyScalar(-this.wake.scale.x * 0.42);
   }
@@ -636,6 +637,47 @@ export interface ShotOptions {
   light?: SpellLight | null;
   /** Called with the round's position every frame, for the smoke it leaves. */
   onTrail?: (at: THREE.Vector3, t: number) => void;
+  /**
+   * Spine samples in the streak the round draws behind it. The one knob
+   * graphics quality turns on the trail; 0 leaves the round untrailed.
+   */
+  trailDetail?: number;
+}
+
+/**
+ * How much of a round's authored nose smear is kept now that the flight path is
+ * drawn as geometry (`tracer.ts`).
+ *
+ * The cone's job has narrowed: it is the blur *on the metal*, a couple of
+ * calibres of stretched highlight at the nose. At its old full length the two
+ * layers doubled up and the pair read as one fat smudge with no direction in it.
+ */
+const NOSE_BLUR = 0.5;
+
+/**
+ * Hands the streak over to a short fade of its own once the round has landed.
+ *
+ * A streak that is deleted on the frame of impact snaps off, which reads as a
+ * glitch. Left to dissolve over a beat and a half of frames it reads as the
+ * afterimage of something that was moving very fast, and it dies under the
+ * debris and the flash of the hit.
+ */
+function releaseStreak(
+  streak: TracerStreak,
+  tweens: { to: (spec: { duration: number; easing: (t: number) => number; onUpdate: (t: number) => void }) => Promise<void> },
+  strength: number,
+): void {
+  void (async () => {
+    try {
+      await tweens.to({
+        duration: 0.16,
+        easing: (t: number) => t,
+        onUpdate: (t: number) => streak.fade(strength * Math.pow(1 - t, 1.7)),
+      });
+    } finally {
+      streak.dispose();
+    }
+  })();
 }
 
 /**
@@ -672,6 +714,11 @@ export async function flyShot(
   shot.place(from, 1);
   shot.aimAlong(heading, 0, haste);
   scene.add(shot.group);
+  // The streak lives in world space, not on the round: it is the path, so it
+  // must stay where the round has been rather than travel with it.
+  const rings = options.trailDetail ?? 20;
+  const streak = rings > 0 ? new TracerStreak(spec.trail, shot.gauge, rings) : null;
+  if (streak) scene.add(streak.object);
   const at = new THREE.Vector3();
   try {
     await tweens.to({
@@ -686,11 +733,13 @@ export async function flyShot(
         // The smear is short as the round clears the bore, opens to full length
         // once it is up to speed: a shot has no blur before it has moved.
         shot.aimAlong(heading, t * distance, haste * Math.min(1, 0.35 + t * 6));
+        streak?.extend(at);
         options.onTrail?.(at, t);
       },
     });
   } finally {
     shot.dispose();
+    if (streak) releaseStreak(streak, tweens, spec.trail.strength);
   }
 }
 

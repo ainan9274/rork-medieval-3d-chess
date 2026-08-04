@@ -551,16 +551,63 @@ second. Rendered honestly it is one pixel for one frame — which is exactly why
 - **Film speed** (`GUNS[kind].speed`, 0.082–0.125 s per tile, clamped to 0.17–0.58 s of flight) —
   slow enough to pick the round up as it clears the bore and follow it into the body. The order
   between barrels stays true: rifled fastest, field gun slowest.
-- **Motion smear** (`tracerTexture()` on a tapered cone, `AMMUNITION[kind].streak`) — a cone of
-  blurred metal trailing the round down its own flight line, brightest at the nose and gone six to
-  eleven calibres behind. It is laid along the *travel vector*, not billboarded, lengthens with the
-  round's actual pace (`haste`), and opens from a stub to full length over the first frames, because
-  a shot has no blur before it has moved. This is the thing the eye actually tracks.
+- **Nose blur** (`tracerTexture()` on a tapered cone, `AMMUNITION[kind].streak × NOSE_BLUR`) — a cone
+  of blurred metal on the nose of the round, laid along the *travel vector* rather than billboarded,
+  lengthening with the round's actual pace (`haste`) and opening from a stub over the first frames,
+  because a shot has no blur before it has moved. It rides *with* the round, so it says how fast the
+  metal is going and nothing about where it has been — which is why it is now held to half its
+  authored length and the path is drawn separately.
 
 On top of that a small **glint** sprite carries caught torchlight so the metal registers against the
 dark far wall, and the round now spawns *clear of the bore* (`min(0.42, muzzleFlare(gun) * 0.44)` down
 the line of fire) instead of inside its own muzzle flash and powder bank. The orange glow sprite, the
 borrowed point light and the dragged-along wake still belong to the iron alone.
+
+### The streak along the flight path
+
+Everything above is pinned to the round, so all of it *travelled with the metal* and none of it said
+where the shot had been: you noticed the ball arriving and never saw it cross. `src/scene/tracer.ts`
+is the missing half — a short 3D ribbon swept along the path the round **actually flew**, from just
+clear of the bore to the body, rebuilt from its own flown samples every frame.
+
+It is geometry, not a billboard, and that buys three things a sprite cannot:
+
+- it **holds its shape from any camera angle** and is occluded by figures and pillars like a real
+  object, instead of flipping or swimming as the shot crosses the view axis;
+- it **bends where the ball bent**. A smoothbore ball bellies off the line of sight on its `sin(πt)`
+  wander and comes back onto the body — that curve used to be hidden inside a straight cone and is
+  now the most legible thing about a musket shot;
+- it stays **short on purpose** (`StreakLook.span`, 4.2–9 rendered ball diameters ≈ one square). A
+  streak reaching all the way from muzzle to victim reads as a laser, which is the one thing black
+  powder never was.
+
+The section is a **three-bladed tube** rather than a camera-facing quad: no camera to consult, no
+flip, and cheap enough (12–26 rings by preset, `trailRings(captureParticles)`) to run several shots
+at once. Two layers are swept along the same spine — a wide faint **sheath** of disturbed air
+(`falloff 1.6`) and a thin bright **filament** at 0.42× the width that only lights the few calibres
+immediately behind the metal (`falloff 4.2`). One layer alone reads as fog or as a wire; together
+they read as speed. Ring radius tapers on `u^0.55` and brightness on `u^falloff`, so the tail
+pinches to a needle and dissolves instead of ending on a cut edge.
+
+Two details keep it from looking like a mesh being animated. The ring frame is **carried forward**
+from sample to sample (the normal is re-projected square to each new tangent) rather than rebuilt
+from a world axis, which is what stops the tube visibly twisting wherever the path turns. And the
+tail is trimmed by **sliding the oldest sample along its segment** to keep the arc length exact,
+never by dropping samples — popping one makes the tail stutter backwards once per step, sliding it
+means the tail dissolves at the same speed the round is travelling. Buffers are allocated once at
+full size and drawn through `setDrawRange`, so a streak that has not yet grown to length never
+trails stale triangles.
+
+When the round lands, `releaseStreak()` hands the ribbon to a 0.16 s fade of its own
+(`(1-t)^1.7`) instead of deleting it on the frame of impact: it dies under the debris and the flash
+as the afterimage of something that was moving very fast. Per round —
+
+| Round | Span | Width | Reads as |
+| --- | --- | --- | --- |
+| **`pistolBall`** | 5 diameters | 0.60 | barely half a square of thin cold air |
+| **`musketBall`** | 5.6 | 0.74 | fat, grey, and visibly *curved* |
+| **`minieBullet`** | 9 | 0.48 | the longest, thinnest streak in the army — and the only straight one |
+| **`roundShot`** | 4.2 | 1.00 | short, wide, hot: scorched air dragged behind glowing iron |
 
 ### The flash at the bore
 

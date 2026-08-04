@@ -25,6 +25,8 @@
 
 import * as THREE from "three";
 
+import type { StreakLook } from "./tracer";
+
 /** Which round a barrel is loaded with. */
 export type AmmoKind = "pistolBall" | "musketBall" | "minieBullet" | "roundShot";
 
@@ -68,11 +70,19 @@ export interface AmmoSpec {
    */
   heat: number;
   /**
-   * The motion smear behind the round: colour, strength, and its length in
+   * The motion smear *on the metal itself*: colour, strength, and its length in
    * rendered ball diameters. This is blur, not fire — no period round was a
    * tracer, so it is grey for lead and only warm for iron out of a hot bore.
+   * It rides with the round; the line of flight is carried by {@link trail}.
    */
   streak: { color: number; opacity: number; stretch: number };
+  /**
+   * The short streak left along the path the round actually flew — the one thing
+   * that lets the eye follow a shot from the bore to the body rather than only
+   * see it arrive. Built as real geometry in `tracer.ts`, so it bends where a
+   * smoothbore ball bellies off the line of sight.
+   */
+  trail: StreakLook;
   /**
    * Torchlight caught on the metal as it turns, as a fraction of full white.
    * Without it, cold lead crossing a dark hall reads as nothing at all.
@@ -111,6 +121,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     wander: 0.9,
     heat: 0,
     streak: { color: 0xc9ced6, opacity: 0.34, stretch: 7 },
+    // The lightest round on the board leaves the least behind it: barely half a
+    // square of thin, cold air.
+    trail: { span: 5, width: 0.6, color: 0xb7c0cb, core: 0xe9eff7, strength: 0.3 },
     glint: 0.4,
     wake: 0,
     shatter: 0.72,
@@ -127,6 +140,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     wander: 1.6,
     heat: 0,
     streak: { color: 0xc2c7ce, opacity: 0.4, stretch: 8.5 },
+    // Fat, grey and visibly curved: this is the round whose wander the streak was
+    // worth building geometry for.
+    trail: { span: 5.6, width: 0.74, color: 0xb2bac5, core: 0xe6edf5, strength: 0.36 },
     glint: 0.42,
     wake: 0,
     // The fattest small-arms round on the board, and soft enough to stay in.
@@ -146,6 +162,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     wander: 0,
     heat: 0,
     streak: { color: 0xdde1e7, opacity: 0.46, stretch: 11 },
+    // The longest, thinnest streak in the army and the only straight one: a
+    // rifled round drawing a wire across the hall.
+    trail: { span: 9, width: 0.48, color: 0xccd6e2, core: 0xf4f8ff, strength: 0.42 },
     glint: 0.5,
     wake: 0,
     // Lighter than a musket ball but arriving far faster and still spinning.
@@ -163,6 +182,9 @@ export const AMMUNITION: Record<AmmoKind, AmmoSpec> = {
     wander: 0.35,
     heat: 1,
     streak: { color: 0xff9a52, opacity: 0.52, stretch: 6 },
+    // Short, wide and hot — iron still glowing from the bore drags a bank of
+    // scorched air behind it rather than a thread.
+    trail: { span: 4.2, width: 1, color: 0xff7f36, core: 0xffd9a4, strength: 0.5 },
     glint: 0.3,
     wake: 2.4,
     // Six pounds of iron. Nothing on the board survives being in its way, and

@@ -672,6 +672,20 @@ function muzzleFlare(gun: GunProfile): number {
 }
 
 /**
+ * Spine samples in a round's streak, read off the particle budget.
+ *
+ * The trail is geometry rebuilt every frame, so its cost is the sample count and
+ * nothing else. Even the floor value still draws a readable streak — the shape
+ * of the path is carried by a handful of rings; the rest is smoothness on the
+ * curve a wandering ball flies.
+ */
+function trailRings(budget: number): number {
+  if (budget >= 60) return 26;
+  if (budget >= 34) return 20;
+  return 12;
+}
+
+/**
  * The hall's own air, in world units per second.
  *
  * Barely a breath — a couple of centimetres a second — but it is what turns a
@@ -2180,6 +2194,10 @@ export class SceneEngine {
       size: gun.ball,
       flight: THREE.MathUtils.clamp((distance / TILE) * gun.speed, 0.17, 0.58),
       light: gun.ammo === "roundShot" && settings.postFx ? this.spellLights.acquire(0xff7a2e, 3.2) : null,
+      // The streak along the path the round flew — the thing that makes a shot
+      // followable rather than merely audible. Its spine resolution is the one
+      // cost that scales with the preset.
+      trailDetail: trailRings(settings.captureParticles),
       onTrail: (at, t) => {
         if (!smoking || t < nextWisp) return;
         nextWisp += 0.22;
@@ -2257,6 +2275,7 @@ export class SceneEngine {
           size: gun.ball,
           flight: 0.24,
           light: null,
+          trailDetail: trailRings(settings.captureParticles),
         });
         audio.ballImpact({ pan: this.stereoPan(beyond), volume: 0.42 });
         // Hot iron on flagstone: the ricochet throws stone chips and a long

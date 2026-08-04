@@ -90,6 +90,7 @@ src/
     spells.ts          fireball orbs, per-army fire, the shared light pool
     gunfire.ts         muzzle flashes, rounds in flight, powder smoke banks
     ammunition.ts      the four rounds: pistol/musket ball, Minié bullet, iron round shot
+    tracer.ts          the short 3D streak swept along the path a round actually flew
     postfx.ts          EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
     textures.ts        procedural marble, basalt, bronze, cloth
     quality.ts         graphics presets + auto-detection
@@ -283,11 +284,23 @@ a black dot. **No round is a tracer**: black powder never fired one.
 **Why a shot is visible at all.** True to scale a ball is one pixel for one frame, so three dials are
 deliberately cinematic while the physics stays honest: `AMMUNITION[kind].gauge` (1.7–2.6× the bore)
 for how large the round is *drawn*; `GUNS[kind].speed` (0.082–0.125 s per tile, clamped to
-0.17–0.58 s) for a flight the eye can follow; and a **motion smear** — `tracerTexture()` on a tapered
-cone laid along the travel vector (not billboarded), 6–11 calibres long, lengthening with the round's
-actual pace and opening from a stub over the first frames. A small glint sprite carries torchlight on
-the metal, and the round spawns clear of the bore rather than inside its own muzzle flash. The orange
-glow, the borrowed light and the dragged-along wake still belong to the iron alone.
+0.17–0.58 s) for a flight the eye can follow; and a **nose blur** — `tracerTexture()` on a tapered
+cone laid along the travel vector (not billboarded), lengthening with the round's actual pace and
+opening from a stub over the first frames, now held to half its authored length (`NOSE_BLUR`). A small
+glint sprite carries torchlight on the metal, and the round spawns clear of the bore rather than
+inside its own muzzle flash. The orange glow, the borrowed light and the dragged-along wake still
+belong to the iron alone.
+
+**The path itself is drawn** (`src/scene/tracer.ts`). Everything above rides *with* the round, so none
+of it said where the shot had been. `TracerStreak` sweeps a short 3D ribbon along the round's own
+flown samples — real geometry, so it holds up from any camera angle, is occluded like an object, and
+**bends where a smoothbore ball wandered**. Section is a three-bladed tube (12–26 rings by preset via
+`trailRings()`), in two layers on one spine: a wide faint sheath of disturbed air and a thin bright
+filament that only lights the calibres right behind the metal. Radius tapers on `u^0.55` and
+brightness on `u^falloff`, so the tail pinches to a needle; the arc is held to `StreakLook.span`
+(4.2–9 ball diameters ≈ one square, never muzzle-to-target, or it reads as a laser) by *sliding* the
+oldest sample along its segment rather than dropping it, which is what keeps the tail from stuttering
+backwards. On impact `releaseStreak()` fades it over 0.16 s under the debris instead of cutting it.
 
 **The flash is sized off the round it launches.** `GUNS[kind].flare` is a *ratio* (4.4–6.0), not a
 width: `muzzleFlare(gun) = ball × AMMUNITION[ammo].gauge × flare` drives the flash, the ember shower,
