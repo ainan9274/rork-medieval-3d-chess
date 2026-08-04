@@ -180,7 +180,7 @@ a set of death cries.
 | --- | --- | --- | --- |
 | `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
 | `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
-| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, marshal's baton, cavalry sabre, gun rammer with a towed field gun, musket with fixed bayonet |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, marshal's baton, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
 
 The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
 breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
@@ -475,10 +475,16 @@ closes with the sabre. The beat is:
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
 board — a dry crack, a puff of smoke, no spectacle. The musket is a hard crack over a chest
 thump and a real bank of white smoke. The field gun is the loudest thing in the hall, louder than
-the crown's judgement: a sub-bass slam with the report coming back off the far wall, and the
-carriage **runs back on its wheels** before the crew heaves it up to the mark again
-(`kickBack()` → `PieceView.setTrainRecoil`). Every voice is synthesised by `calibre` in one
-mixer method — no assets, so a volley never waits on a download.
+the crown's judgement: a sub-bass slam with the report coming back off the far wall.
+
+The piece is not nudged by its own charge, it is **thrown** (`gunRecoil()` →
+`PieceView.setTrainRecoil(back, lift)`): the wheels leave the stone and the muzzle jumps in under
+a tenth of a second, the carriage comes down while it is still running back, rolls a little
+further, and only then is heaved up to the mark again over most of a second. Dust and grit are
+hammered out from under the wheels on the frame it fires, the trail is heard slamming back just
+behind the report with the wheels landing after it, and the hall takes the shock of the recoil a
+beat *after* the shot rather than with it. Every voice is synthesised by `calibre` in one mixer
+method — no assets, so a volley never waits on a download.
 
 The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
 barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a

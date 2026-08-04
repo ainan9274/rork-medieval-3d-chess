@@ -2032,19 +2032,74 @@ export class SceneEngine {
     })();
 
     if (gun.recoil <= 0 || !attacker.hasTrain) return;
-    void (async () => {
-      await this.tweens.to({
-        duration: 0.09,
-        easing: Ease.outQuint,
-        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * t),
+    this.gunRecoil(attacker, gun);
+  }
+
+  /**
+   * A field gun going off. The piece is not nudged — it is thrown: the wheels
+   * leave the stone, the muzzle jumps, the carriage runs back the length of its
+   * own trail, drops, rolls a little further, and is only then heaved up to the
+   * mark again. Dust is hammered out from under the wheels on the frame it
+   * fires, and the stone is heard taking the shock of the recoil a moment after
+   * the report itself.
+   */
+  private gunRecoil(attacker: PieceView, gun: GunProfile): void {
+    const settings = QUALITY_SETTINGS[this.preset];
+    const carriage = attacker.trainOrigin();
+    if (carriage) {
+      const pan = this.stereoPan(carriage);
+      // The trail slamming back over the stone, just behind the report.
+      audio.groundSlam({ pan, volume: 0.34, delay: 0.05 });
+      // ...and the wheels coming down again at the end of the run-back.
+      audio.footstep({ pan, timbre: "plate", volume: 0.5, delay: 0.2, jitter: -0.18 });
+      this.effects.spawnSmoke(carriage.clone().setY(BOARD_TOP + 0.05), {
+        count: Math.max(3, Math.round(settings.captureParticles * 0.2)),
+        radius: 0.34,
+        scale: 0.5,
+        growth: 2.8,
+        life: 1,
+        speed: 1.5,
+        rise: 0.08,
+        color: 0x9c8f7d,
+        opacity: 0.42,
       });
-      // Hauled back up to the mark: slower than it went back, as it would be.
+      this.effects.spawnBurst(carriage.clone().setY(BOARD_TOP + 0.04), 0xc7ac82, Math.round(settings.captureParticles * 0.2), {
+        speed: 2.6,
+        life: 0.5,
+        gravity: 3.2,
+        radius: 0.16,
+        size: 0.06,
+        drag: 2.6,
+      });
+    }
+
+    void (async () => {
+      // The charge takes it: back and up in under a tenth of a second.
       await this.tweens.to({
-        duration: 0.9,
+        duration: 0.07,
+        easing: Ease.outQuint,
+        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * t, t),
+      });
+      // The wheels find the stone again while the piece is still running back.
+      await this.tweens.to({
+        duration: 0.22,
+        easing: Ease.outCubic,
+        onUpdate: (t) =>
+          attacker.setTrainRecoil(gun.recoil * (1 + t * 0.14), Math.pow(1 - t, 1.6)),
+      });
+      // Then the crew heaves it up to the mark: slow, as it would be.
+      await this.tweens.to({
+        duration: 0.86,
         easing: Ease.inOutCubic,
-        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * (1 - t)),
+        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * 1.14 * (1 - t)),
       });
       attacker.setTrainRecoil(0);
+    })();
+
+    // The hall takes the recoil a beat after the shot, not with it.
+    void (async () => {
+      await wait(0.06);
+      this.shake.add(0.34);
     })();
   }
 

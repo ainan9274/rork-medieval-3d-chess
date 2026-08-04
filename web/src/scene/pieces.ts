@@ -920,13 +920,29 @@ export class PieceView {
   }
 
   /**
-   * Rolls the gun carriage back on its wheels, in figure heights. The gun hangs
-   * off the sculpt root in body axes, so recoil is a shove along its own -Z.
+   * Rolls the gun carriage back on its wheels and tips its muzzle as the charge
+   * lifts the trail. The gun hangs off the sculpt root in body axes, so recoil
+   * is a shove along its own -Z with a pitch about the axle (its own X).
+   *
+   * @param back travel back along the carriage's own line of fire, in figure heights
+   * @param lift 0 = level on its wheels, 1 = muzzle thrown up by a full charge
    */
-  setTrainRecoil(amount: number): void {
+  setTrainRecoil(back: number, lift = 0): void {
     const train = this.arms?.train;
     if (!train) return;
-    train.position.z = -Math.max(0, amount);
+    const jump = Math.max(0, lift);
+    train.position.z = -Math.max(0, back);
+    // A field gun's wheels really do leave the ground under a full charge.
+    train.position.y = jump * 0.045;
+    train.rotation.x = -jump * 0.2;
+  }
+
+  /** World point the hauled gun carriage stands at, or null if nothing is towed. */
+  trainOrigin(): THREE.Vector3 | null {
+    const train = this.arms?.train;
+    if (!train) return null;
+    train.updateWorldMatrix(true, false);
+    return train.getWorldPosition(new THREE.Vector3());
   }
 
   /**

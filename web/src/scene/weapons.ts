@@ -59,8 +59,6 @@ type WeaponId =
   | "eagleStaff"
   | "marshalBaton"
   | "cavalrySabre"
-  | "artilleryRammer"
-  | "eagleShield"
   | "musketBayonet"
   | "officerPistol"
   | "fieldCannon";
@@ -831,54 +829,6 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     },
   },
   /**
-   * Artillery guard: the gun's rammer — a long ash stave under a banded oak
-   * head, swung like a maul when the battery is overrun.
-   */
-  artilleryRammer: {
-    grip: 0.17,
-    aim: new THREE.Vector3(-0.05, 1, 0.13),
-    offset: new THREE.Vector3(0.02, 0, 0.03),
-    build: () => {
-      const head = new THREE.CylinderGeometry(0.088, 0.088, 0.17, 16);
-      head.translate(0, 0.56, 0);
-      return [
-        { geometry: shaft(0.48, 0.019, 0.017), role: "wood" },
-        { geometry: shaft(0.16, 0.021), role: "leather" },
-        { geometry: ring(0.026, 0.008, 0.44), role: "gold" },
-        { geometry: head, role: "wood" },
-        { geometry: ring(0.09, 0.011, 0.5), role: "gold" },
-        { geometry: ring(0.09, 0.011, 0.62), role: "gold" },
-        { geometry: ball(0.05, 0.655), role: "steel" },
-        { geometry: spike(0.014, 0.038, -0.036, Math.PI), role: "steel" },
-      ];
-    },
-  },
-  /**
-   * Artillery guard off-hand: the battery's rectangular mantlet, faced with a
-   * gilt imperial eagle. Wide and flat — the fortress read of the rook.
-   */
-  eagleShield: {
-    grip: 0,
-    shield: true,
-    half: 0.23,
-    aim: new THREE.Vector3(0.34, 0.03, 1),
-    offset: new THREE.Vector3(0.055, 0.02, 0.06),
-    build: () => {
-      const eagle = eagleParts(0.12, 0.02, "gold").map((part) => {
-        part.geometry.translate(0, 0, 0.026);
-        return part;
-      });
-      return [
-        { geometry: box(0.3, 0.44, 0.024, 0), role: "cloth" },
-        { geometry: box(0.32, 0.03, 0.03, 0.215), role: "gold" },
-        { geometry: box(0.32, 0.03, 0.03, -0.215), role: "gold" },
-        { geometry: box(0.028, 0.46, 0.03, 0, 0.15), role: "gold" },
-        { geometry: box(0.028, 0.46, 0.03, 0, -0.15), role: "gold" },
-        ...eagle,
-      ];
-    },
-  },
-  /**
    * Line infantry: the Charleville musket with the bayonet fixed — the longest
    * silhouette on the board and the pawn's whole identity from above.
    */
@@ -972,7 +922,11 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
 };
 
 interface Loadout {
-  main: WeaponId;
+  /**
+   * Right-hand arm. Omitted for a figure whose weapon is the thing it hauls:
+   * the battery serves a field gun, so its hands stay free.
+   */
+  main?: WeaponId;
   off?: WeaponId;
   /** Hauled along rather than held — the artillery's gun. */
   train?: WeaponId;
@@ -1006,7 +960,9 @@ const LOADOUT: Record<ArsenalId, Record<PieceKind, Loadout>> = {
     q: { main: "eagleStaff" },
     b: { main: "marshalBaton" },
     n: { main: "cavalrySabre" },
-    r: { main: "artilleryRammer", train: "fieldCannon" },
+    // Nothing in either fist: the gun is the weapon, and a rammer held like a
+    // maul made the crew read as a brawler standing next to its own artillery.
+    r: { train: "fieldCannon" },
     p: { main: "musketBayonet" },
   },
 };
@@ -1316,7 +1272,7 @@ export function attachWeapons(
     dress(id, inner);
   };
 
-  mount(loadout.main, "right");
+  if (loadout.main) mount(loadout.main, "right");
   if (loadout.off) mount(loadout.off, "left");
   if (loadout.train) haul(loadout.train);
   return arms;

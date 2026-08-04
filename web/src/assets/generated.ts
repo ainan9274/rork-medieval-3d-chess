@@ -233,15 +233,21 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       run: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-standard-forward-charge-inplace.glb`,
     },
     // The battery: the crew lays the gun it hauls, then serves it. Its "strike"
-    // is the step in to the trail and the shove on the lanyard.
-    // Alternative: `...-anim-heavy-hammer-swing.glb` (rammer swung as a maul).
+    // is the step in to the trail and the shove on the lanyard. Its hands are
+    // empty — the gun is towed, not carried — so both loops are chosen for a
+    // crewman standing to his piece rather than one hugging a weapon:
+    //   * stance — at ease beside the trail, arms down (not a brawler's guard)
+    //   * stride — an ordinary march, played at the battery's slow cadence so
+    //     it reads as a heavy tread. The old carry-the-cannon trudge hugged an
+    //     invisible barrel with both arms and read as a broken walk.
+    // Alternatives on the same rig: `...-anim-combat-stance.glb`,
+    // `...-anim-carry-heavy-cannon-forward-inplace.glb`.
     r: {
       rigged: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-rigged.glb`,
-      idle: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-combat-stance.glb`,
+      idle: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-idle.glb`,
       attack: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-step-forward-and-push.glb`,
       death: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-knock-down.glb`,
-      // The gun crew's laden trudge — the heaviest tread on the board.
-      walk: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-carry-heavy-cannon-forward-inplace.glb`,
+      walk: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-casual-walk-inplace.glb`,
       // Kneeling at the muzzle with powder and shot once the piece has spoken.
       reload: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-kneeling-reload.glb`,
     },
