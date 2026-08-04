@@ -709,11 +709,20 @@ Drop higher-quality glTF/GLB characters into `public/models/` and point the entr
   `PIECE_HEIGHT` (`src/scene/pieces.ts`), then centres it on X/Z and grounds it on Y.
 
 `PIECE_HEIGHT` is **two tiers, not six**: knight, mage and tower guardian stand in the royal band
-with the queen (0.98 / 1.00 / 0.99 vs 1.00), the king alone rises to 1.12, the pawn stays at 0.70.
-At their old 0.84-0.88 the three officers read as footsoldiers at camera distance. Crests and flat
-map tokens are re-ranked with them (`BADGE_SCALE`, `TOKEN_SCALE` in `scene/rankBadges.ts`), and the
-battery's towed gun is held to its authored size by `WeaponSpec.bulk` — a field piece must not swell
-because its crew got taller, or its wheels roll into the neighbouring file.
+with the queen (0.98 / 1.00 / 0.99 vs 1.00), the king alone rises to 1.12, the pawn holds the lower
+tier at 0.78. At their old 0.84-0.88 the three officers read as footsoldiers at camera distance, and
+at its old 0.70 the pawn — sixteen of the thirty-two figures on the board — read as a token sitting
+on its square rather than a soldier holding it. Crests and flat map tokens are re-ranked with them
+(`BADGE_SCALE`, `TOKEN_SCALE` in `scene/rankBadges.ts`).
+
+The battery's towed gun is sized against the **crewman**, not against the sculpt it was drawn at:
+`WeaponSpec.bulk` is 1.22, which puts the wheels at about half the artillery guard's height (a real
+Gribeauval rolls on wheels four fifths of a man's height — the old 0.85 left them at a third, and the
+rank read as an officer wheeling a toy). Because one square is only `TILE` wide, the extra size is
+paid for by **`WeaponSpec.track` (0.8)**, a squeeze on the gun's own X — the axle. Wheels stand in
+the YZ plane, so a narrower track only thins their tyres and never turns a wheel into an ellipse.
+With the park at `(0.2, 0, -0.04)` and the hauling yaw eased to 0.07 rad, the enlarged carriage
+overhangs its tile by 0.03 units where the smaller one overhung 0.11.
 - Materials are cloned per instance and tinted per faction in `applyFactionLook()`.
 
 If a rigged model fails to download the loader falls back to the static sculpt, and if that

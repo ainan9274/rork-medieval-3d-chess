@@ -127,12 +127,24 @@ interface WeaponSpec {
   /**
    * Size of a towed prop against the figure hauling it, 1 = authored size.
    *
-   * A gun carriage is a real object with a real size: it must not swell just
-   * because its crew grew taller. Authored against a 0.84-high artillery guard,
-   * so when that rank joined the royal band this holds the wheels where they
-   * were — without it a 19% taller crewman rolls his gun into the next square.
+   * A gun carriage is a real object with a real size, and the reference it has to
+   * look right against is the *crewman standing next to it*. A real Gribeauval
+   * 6-pounder rolls on wheels about four fifths of a man's height and is longer
+   * than a man is tall; at the old 0.85 this gun's wheels reached barely a third
+   * of the guard's height, so the battery read as an officer wheeling a toy.
    */
   bulk?: number;
+  /**
+   * Lateral squeeze of a towed prop, applied to its own X (the axle) only.
+   *
+   * The gun cannot simply be scaled up until it looks right: one board square is
+   * {@link TILE} wide, and a uniformly grown carriage puts a wheel down on the
+   * neighbouring piece's tile. The axle is the one axis that can be given up
+   * without the eye noticing — the wheels stand in the YZ plane, so narrowing the
+   * track only thins their tyres, it never turns a wheel into an ellipse. So the
+   * gun buys its height and its length back out of its track width.
+   */
+  track?: number;
 }
 
 // ------------------------------------------------------------------ geometry
@@ -986,9 +998,15 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
   fieldCannon: {
     grip: 0,
     towed: true,
-    // 0.84 (the height this gun was authored against) / 0.99 (the guard's height).
-    bulk: 0.85,
-    park: new THREE.Vector3(0.42, 0, -0.1),
+    // Sized against the guard who hauls it, not against the sculpt it was authored
+    // at: 1.22 puts the wheels at roughly half his height and the trail-to-muzzle
+    // run just under a square, which is the smallest gun that still reads as the
+    // tower rank's weapon. The track pays for it (see {@link WeaponSpec.track}).
+    bulk: 1.22,
+    track: 0.8,
+    // Pulled in and squared up on the tile now that the carriage is half again as
+    // long: the old (0.42, -0.1) park was set around a gun two thirds this size.
+    park: new THREE.Vector3(0.2, 0, -0.04),
     muzzle: new THREE.Vector3(0, 0.28, 0.36),
     aim: new THREE.Vector3(0, 1, 0),
     offset: new THREE.Vector3(0, 0, 0),
@@ -1458,13 +1476,19 @@ export function attachWeapons(
     // The gun keeps its own size, and parks that many gun-lengths out from the
     // crew rather than that many figure-heights (see {@link WeaponSpec.bulk}).
     const size = unit * (spec.bulk ?? 1);
+    // Squeezed on its own axle only, so the wheels stay round while the carriage
+    // keeps the height and length it needs (see {@link WeaponSpec.track}). Scale
+    // is applied inside the group's own rotation, so this is the gun's X, not the
+    // board's.
+    const track = spec.track ?? 1;
     const group = new THREE.Group();
     group.name = `train_${id}`;
-    group.scale.setScalar(size);
+    group.scale.set(size * track, size, size);
     group.position.set(park.x * size, baseY + park.y * size, park.z * size);
     // Hauled at a slight angle, so the gun reads as being dragged rather than
-    // parked in a battery line.
-    group.rotation.y = -0.14;
+    // parked in a battery line. Kept shallow: yaw trades length for width, and a
+    // carriage this long turns every degree into overhang on the next tile.
+    group.rotation.y = -0.07;
     root.add(group);
 
     const inner = new THREE.Group();

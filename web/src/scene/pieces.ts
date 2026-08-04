@@ -26,9 +26,15 @@ import { armSculptWarmJobs, attachWeapons, type AttachedArms } from "./weapons";
  * the queen — a knight, a mage and a tower guardian are champions, not
  * footsoldiers, and at their old 0.84-0.88 they sat close enough to the pawn's
  * 0.7 to be mistaken for one. The king alone still stands over everything.
+ *
+ * The footsoldier sits at 0.78 rather than 0.7: sixteen of the thirty-two figures
+ * on the board are pawns, so they are what the hall mostly *is*, and at 0.7 a
+ * man stood barely two thirds of the tile he occupied — he read as a token on his
+ * square instead of a soldier holding it. 0.78 still leaves a fifth of a square
+ * of daylight to the officer band, which is what keeps the two tiers separable.
  */
 export const PIECE_HEIGHT: Record<PieceKind, number> = {
-  p: 0.7,
+  p: 0.78,
   n: 0.98,
   b: 1.0,
   r: 0.99,
