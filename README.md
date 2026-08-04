@@ -99,7 +99,8 @@ cd web && bun install && bun run dev
 - **Showcase / attract mode** — let two engines duel on their own with pace control, pause,
   auto-rematch, and a clean capture view with the entire interface hidden. Three camera
   behaviours: hold one angle, follow the figure on the move and close in on the fight, or
-  drift slowly around the board. The showcase also renders crisper than a played game —
+  drift slowly around the board. The follow rig **leans** towards the action instead of
+  chasing it into the hall wall, so the picture no longer shudders while it tracks. The showcase also renders crisper than a played game —
   no depth of field, softer grain, vignette and bloom. Every showcase duel now **ends with a
   verdict card**: who won and how, the two engine strengths, the record, a countdown on the next
   duel that can be held, and one tap to roll another duel or return to the hall.
@@ -1230,6 +1231,21 @@ What else the solved framing carries:
   framed. Orbit controls can only cap angle and distance *independently*, so a long pull-back at
   a low angle used to walk the camera straight through the pillars — that is the bug this closes.
   The intro fly-in is exempt: it deliberately comes in from outside the walls.
+- **The showcase follow rig solves that wall itself, up front.** A net that corrects the *camera*
+  after the smoothing has run is fine for a hand on the mouse, but it was wrong for a rig that
+  asks for an illegal eye on every near-side move: each frame the chase stepped outward, the wall
+  shoved it back, and the height came back through a square root. Simulating the real loop against
+  a figure marching down the near file, the clamp fired on **98% of frames**, doubled the camera's
+  mean frame-to-frame jerk and spiked it to **0.5% of screen height in single frames** — the
+  shudder people saw in showcase mode. `solveFollowEye()` now cuts the rig's ground reach to what
+  the hall has room for *before* the smoothing, paying first out of distance (18%) and only then
+  out of elevation. Same intent as the clamp, but continuous: the clamp never fires while
+  following, the jerk drops ~11×, and the eye settles **lower** than the old correction left it
+  (7.4 rather than 9.6 on the worst corner).
+- **The follow rig leans rather than chases.** Holding the figure dead centre dragged the eye a
+  full board-width sideways — which is what pushed it into the wall in the first place. It now
+  travels 72% of the way to the action: the figure sits a fifth of the frame off centre, the rest
+  of the position stays in shot, and the camera moves noticeably less between moves.
 - **A phone is never given the near-ground angle.** At eye level the board is a line and the
   screen is all hall, so a handheld view is capped at ~20° above the horizon and framed from
   higher up — which also means a tap lands on the square the finger is actually over. A pinch

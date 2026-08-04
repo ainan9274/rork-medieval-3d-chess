@@ -109,6 +109,26 @@ const SHOWCASE_SHOT: CameraShot = {
 const BOARD_FOCUS = new THREE.Vector3(0, 0.45, 0);
 
 /**
+ * How far the follow rig leans towards the action, as a fraction of the way from
+ * the board centre to the figure being followed.
+ *
+ * A full chase (1) puts the figure dead centre, but it also drags the eye a full
+ * board-width sideways — straight into the hall wall on every near-side move.
+ * Leaning keeps the whole position in frame and the rig in open air.
+ */
+const FOLLOW_LEAN = 0.72;
+
+/**
+ * How much of its distance the follow rig gives up before it starts to climb,
+ * when the hall has run out of room behind the action. A step closer costs the
+ * picture far less than a climb towards a top-down view does.
+ */
+const FOLLOW_GIVE = 0.18;
+
+/** Clearance held between the follow rig's eye and the hall wall. */
+const FOLLOW_WALL_MARGIN = 0.4;
+
+/**
  * The flat tactical map: high above the board, dead centre and shot through a
  * narrow lens so the squares read as a grid instead of a receding perspective.
  */
@@ -943,6 +963,7 @@ export class SceneEngine {
   private followRig = new THREE.Spherical(7.6, 0.92, Math.PI * 0.32);
   private followOffset = new THREE.Spherical();
   private scratchFocus = new THREE.Vector3();
+  private scratchLean = new THREE.Vector3();
   private scratchDesired = new THREE.Vector3();
   /** True while the engine itself is moving the camera (never counts as input). */
   private cameraDriven = false;
@@ -3587,26 +3608,71 @@ export class SceneEngine {
     // A hand on the mouse always wins; tracking resumes a couple of seconds later.
     if (this.elapsed - this.lastManualCameraAt < 2.4) return false;
 
-    const focus = this.followPiece?.container.position ?? this.followPoint ?? BOARD_FOCUS;
-    this.followedFocus.lerp(
-      this.scratchFocus.copy(focus).setY(THREE.MathUtils.clamp(focus.y + 0.45, 0.35, 1.1)),
-      1 - Math.exp(-delta * 3.6),
-    );
+    const subject = this.followPiece?.container.position ?? this.followPoint ?? BOARD_FOCUS;
+    // Lean towards the action instead of sitting rigidly behind it: the eye
+    // covers a fraction of the board rather than all of it, which both keeps the
+    // rest of the position in shot and keeps the rig clear of the hall.
+    this.scratchFocus
+      .copy(BOARD_FOCUS)
+      .addScaledVector(this.scratchLean.copy(subject).sub(BOARD_FOCUS), FOLLOW_LEAN)
+      .setY(THREE.MathUtils.clamp(subject.y + 0.45, 0.35, 1.1));
+    this.followedFocus.lerp(this.scratchFocus, 1 - Math.exp(-delta * 3.6));
 
-    this.followOffset.set(
+    const desired = this.solveFollowEye(
       THREE.MathUtils.clamp(
         this.followRig.radius * this.followTightness,
         this.limits.minDistance,
         this.limits.maxDistance,
       ),
-      this.followRig.phi,
-      this.followRig.theta,
     );
-    const desired = this.scratchDesired.setFromSpherical(this.followOffset).add(this.followedFocus);
     const smooth = 1 - Math.exp(-delta * 2.4);
     this.camera.position.lerp(desired, smooth);
     this.controls.target.lerp(this.followedFocus, smooth);
     return true;
+  }
+
+  /**
+   * The eye the follow rig is asking for, already solved to stand inside the
+   * hall.
+   *
+   * This is what stops the showcase camera shuddering. The rig is anchored on
+   * the action, so tracking anything on the near half of the board asks for an
+   * eye behind the wall — and correcting that on the *camera*, after the
+   * smoothing has already run (which is all {@link confineCamera} can do), puts
+   * a hard projection in the loop: every frame the chase steps outward and the
+   * wall shoves it back, and the height is re-derived through a square root each
+   * time. Measured against a figure marching down the near file, that doubled
+   * the camera's mean frame-to-frame jerk and spiked it to half a percent of
+   * screen height in single frames — a visible shudder on almost every move.
+   *
+   * So the wall is solved here instead, before anything moves: the rig's ground
+   * reach is cut to whatever the hall actually has room for, paid for first out
+   * of distance and only then out of elevation. The result is a legal target for
+   * the same exponential smoothing, `confineCamera` never fires while following,
+   * and the eye ends up *lower* than the old clamp left it.
+   */
+  private solveFollowEye(radius: number): THREE.Vector3 {
+    const focus = this.followedFocus;
+    const { phi, theta } = this.followRig;
+    const room = HALL_INNER_RADIUS - FOLLOW_WALL_MARGIN;
+    // How far the eye may travel along the rig's heading before it leaves the
+    // hall: the positive root of |focus + reach · heading| = room.
+    const towards = Math.sin(theta) * focus.x + Math.cos(theta) * focus.z;
+    const span = towards * towards - (focus.x * focus.x + focus.z * focus.z) + room * room;
+    const available = span <= 0 ? 0 : Math.max(0, Math.sqrt(span) - towards);
+    const reach = Math.min(radius * Math.sin(phi), available);
+    // Pay in distance first, down to the floor; the elevation covers the rest.
+    const pulled = THREE.MathUtils.clamp(
+      reach / Math.max(1e-3, Math.sin(phi)),
+      Math.max(this.limits.minDistance, radius * (1 - FOLLOW_GIVE)),
+      radius,
+    );
+    this.followOffset.set(
+      pulled,
+      Math.max(this.limits.minPolarAngle, Math.asin(THREE.MathUtils.clamp(reach / pulled, 0, 1))),
+      theta,
+    );
+    return this.scratchDesired.setFromSpherical(this.followOffset).add(focus);
   }
 
   /**

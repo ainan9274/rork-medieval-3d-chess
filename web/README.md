@@ -59,6 +59,16 @@ untouched.
 - `confineCamera()` runs every frame and converts any ground reach past radius 11 into height,
   because orbit controls can only cap angle and distance independently. The intro fly-in is
   exempt — it comes in from outside the walls on purpose.
+- The showcase follow rig does **not** rely on that net. `solveFollowEye()` cuts the rig's ground
+  reach to the positive root of `|focus + reach · heading| = 10.6` *before* the exponential
+  smoothing, spending `FOLLOW_GIVE` (18%) of the distance before it steepens `phi`. Correcting the
+  camera after the lerp instead put a hard projection inside the loop: replaying the real frame
+  loop against a march down the near file, the clamp fired on 354/360 frames and spiked the
+  per-frame jerk to `5.3e-2` world units (0.5% of screen height) against `8.6e-3` for a clean
+  path — the showcase shudder. Solving up front leaves the clamp dormant while following.
+- `FOLLOW_LEAN` (0.72) holds the rig a fraction of the way from the board centre to the figure, so
+  the eye covers part of the board rather than all of it — less travel per move, and the reach
+  rarely runs out in the first place.
 - `orbitLimits()` gives handheld screens a steeper elevation cap, a longer minimum pinch
   distance, a slower rotate speed and a fatter tap tolerance.
 - `lensFov` holds the framing currently in force; battle-beat punch-ins are scaled against it
