@@ -953,6 +953,124 @@ export class AudioManager {
     this.duckBeds(0.6, 1.1);
   }
 
+  /**
+   * Black powder going off. One voice covers the whole army by `calibre`:
+   *
+   * - `0` — an officer's flintlock pistol: a dry, bright crack, gone at once.
+   * - `0.5` — a Charleville musket: a harder crack over a short chest thump.
+   * - `1` — a field gun: the crack is buried under a sub-bass slam that rolls
+   *   away down the hall, with the report coming back off the far wall.
+   *
+   * All of it is synthesised, so a volley never waits on a download.
+   */
+  gunshot(options: StrikeSoundOptions = {}): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    const ctx = this.ctx;
+    const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
+    const calibre = Math.max(0, Math.min(1, options.weight ?? 0.5));
+    const level = (0.34 + calibre * 0.3) * (options.volume ?? 1);
+    const bus = this.spellBus(options.pan ?? 0, 0.5);
+
+    // The report itself: a very short, very loud burst of noise, filtered lower
+    // as the bore gets bigger.
+    const crack = ctx.createBufferSource();
+    crack.buffer = this.noiseBuffer(0.09 + calibre * 0.14, 5.5 - calibre * 2.6);
+    const shape = ctx.createBiquadFilter();
+    shape.type = "bandpass";
+    shape.Q.value = 0.55;
+    shape.frequency.setValueAtTime(3400 - calibre * 2200, when);
+    shape.frequency.exponentialRampToValueAtTime(520 - calibre * 340, when + 0.09 + calibre * 0.1);
+    const crackGain = ctx.createGain();
+    crackGain.gain.setValueAtTime(level * 1.15, when);
+    crackGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.12 + calibre * 0.16);
+    crack.connect(shape);
+    shape.connect(crackGain);
+    crackGain.connect(bus);
+    crack.start(when);
+
+    // The charge under it. A pistol barely has one; a gun is almost all thump.
+    const punch = ctx.createOscillator();
+    const punchGain = ctx.createGain();
+    const span = 0.16 + calibre * 0.6;
+    punch.type = "sine";
+    punch.frequency.setValueAtTime(220 - calibre * 130, when);
+    punch.frequency.exponentialRampToValueAtTime(52 - calibre * 26, when + span);
+    punchGain.gain.setValueAtTime(0.0001, when);
+    punchGain.gain.exponentialRampToValueAtTime(level * (0.5 + calibre * 0.9), when + 0.012);
+    punchGain.gain.exponentialRampToValueAtTime(0.0001, when + span);
+    punch.connect(punchGain);
+    punchGain.connect(bus);
+    punch.start(when);
+    punch.stop(when + span + 0.1);
+
+    // Powder smoke and wadding: a soft hiss trailing the shot.
+    const smoke = ctx.createBufferSource();
+    smoke.buffer = this.noiseBuffer(0.4 + calibre * 0.5, 1.8);
+    const air = ctx.createBiquadFilter();
+    air.type = "highpass";
+    air.frequency.value = 2400 - calibre * 900;
+    const smokeGain = ctx.createGain();
+    smokeGain.gain.setValueAtTime(0.0001, when + 0.02);
+    smokeGain.gain.exponentialRampToValueAtTime(level * 0.22, when + 0.07);
+    smokeGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.45 + calibre * 0.4);
+    smoke.connect(air);
+    air.connect(smokeGain);
+    smokeGain.connect(bus);
+    smoke.start(when + 0.02);
+
+    // Only a gun is big enough for the hall to answer it.
+    if (calibre > 0.6) {
+      const echo = ctx.createBufferSource();
+      echo.buffer = this.noiseBuffer(0.7, 1.2);
+      const walls = ctx.createBiquadFilter();
+      walls.type = "bandpass";
+      walls.Q.value = 0.4;
+      walls.frequency.value = 420;
+      const echoGain = ctx.createGain();
+      echoGain.gain.setValueAtTime(0.0001, when + 0.14);
+      echoGain.gain.exponentialRampToValueAtTime(level * 0.3, when + 0.22);
+      echoGain.gain.exponentialRampToValueAtTime(0.0001, when + 1.05);
+      echo.connect(walls);
+      walls.connect(echoGain);
+      echoGain.connect(bus);
+      echo.start(when + 0.13);
+    }
+
+    this.duckBeds(0.78 - calibre * 0.2, 0.5 + calibre * 0.7);
+  }
+
+  /**
+   * The drill around a shot: the hammer being drawn back, a ramrod going down a
+   * barrel, the ring of a linstock on a gun. Small, dry mechanical ticks that
+   * make the wind-up read as a firearm rather than a spell.
+   *
+   * @param options `weight` 0 is a pistol lock, 1 is iron on a field gun
+   */
+  gunLock(options: StrikeSoundOptions = {}): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    const ctx = this.ctx;
+    const when = ctx.currentTime + Math.max(0, options.delay ?? 0);
+    const weight = Math.max(0, Math.min(1, options.weight ?? 0.4));
+    const level = 0.2 * (options.volume ?? 1);
+    const bus = this.spellBus(options.pan ?? 0, 0.45);
+
+    for (const step of [0, 0.07 + weight * 0.05]) {
+      const tick = ctx.createBufferSource();
+      tick.buffer = this.noiseBuffer(0.05, 7);
+      const metal = ctx.createBiquadFilter();
+      metal.type = "bandpass";
+      metal.Q.value = 5 + weight * 4;
+      metal.frequency.value = 2600 - weight * 1200 + (step > 0 ? 380 : 0);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(level * (step > 0 ? 0.75 : 1), when + step);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + step + 0.07);
+      tick.connect(metal);
+      metal.connect(gain);
+      gain.connect(bus);
+      tick.start(when + step);
+    }
+  }
+
   /** Panned input bus shared by the spell voices. */
   private spellBus(pan: number, width: number): GainNode {
     const ctx = this.ctx;

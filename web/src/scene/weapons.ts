@@ -61,7 +61,9 @@ type WeaponId =
   | "cavalrySabre"
   | "artilleryRammer"
   | "eagleShield"
-  | "musketBayonet";
+  | "musketBayonet"
+  | "officerPistol"
+  | "fieldCannon";
 
 interface WeaponSpec {
   build: () => Part[];
@@ -84,6 +86,21 @@ interface WeaponSpec {
    * from exactly this point, read out of the live pose.
    */
   focus?: number;
+  /**
+   * Muzzle in the prop's own authored coordinates. Firearms throw their flash,
+   * their smoke and their ball from exactly this point, read out of the live
+   * pose — so the shot leaves the barrel wherever the arms have swung it.
+   */
+  muzzle?: THREE.Vector3;
+  /**
+   * Not held at all: hauled along beside the figure (the battery's gun). Towed
+   * props are authored in body axes — front +Z, up +Y, wheels on ±X — and are
+   * parented to the sculpt root rather than to a hand bone, so the crew's arms
+   * can swing without dragging the carriage around with them.
+   */
+  towed?: boolean;
+  /** Where a towed prop stands, in figure heights: +x is the holding side. */
+  park?: THREE.Vector3;
 }
 
 // ------------------------------------------------------------------ geometry
@@ -333,6 +350,54 @@ function eagleParts(size: number, y: number, role: WeaponRole): Part[] {
     wing.rotateZ(side * -0.42);
     wing.translate(0, y + size * 0.22, 0);
     parts.push({ geometry: wing, role });
+  }
+  return parts;
+}
+
+/** Cylinder lying along the body's front axis (+Z) — gun barrels and axles. */
+function tube(
+  length: number,
+  radius: number,
+  frontRadius = radius,
+  z = 0,
+  y = 0,
+  x = 0,
+): THREE.BufferGeometry {
+  const geometry = new THREE.CylinderGeometry(frontRadius, radius, length, 14, 1);
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(x, y, z + length / 2);
+  return geometry;
+}
+
+/**
+ * One artillery wheel: a tyred rim on a hub, standing in the plane the gun
+ * rolls in (axle along ±X). Spokes are solid boxes — a real spoked wheel reads
+ * as a blur at gameplay scale and costs ten times the triangles.
+ */
+function gunWheel(radius: number, x: number, y: number, z: number): Part[] {
+  const parts: Part[] = [];
+  const rim = new THREE.TorusGeometry(radius, radius * 0.11, 8, 20);
+  rim.rotateY(Math.PI / 2);
+  rim.translate(x, y, z);
+  parts.push({ geometry: rim, role: "steel" });
+  const felloe = new THREE.TorusGeometry(radius * 0.88, radius * 0.075, 6, 18);
+  felloe.rotateY(Math.PI / 2);
+  felloe.translate(x, y, z);
+  parts.push({ geometry: felloe, role: "wood" });
+  const hub = new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, radius * 0.36, 10);
+  hub.rotateZ(Math.PI / 2);
+  hub.translate(x, y, z);
+  parts.push({ geometry: hub, role: "wood" });
+  const cap = new THREE.SphereGeometry(radius * 0.13, 10, 8);
+  cap.translate(x + Math.sign(x) * radius * 0.2, y, z);
+  parts.push({ geometry: cap, role: "gold" });
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI;
+    const spoke = new THREE.BoxGeometry(radius * 0.13, radius * 1.72, radius * 0.1);
+    spoke.rotateX(Math.PI / 2);
+    spoke.rotateX(angle);
+    spoke.translate(x, y, z);
+    parts.push({ geometry: spoke, role: "wood" });
   }
   return parts;
 }
@@ -819,6 +884,8 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
    */
   musketBayonet: {
     grip: 0.26,
+    // The flame leaves the barrel mouth, under the bayonet socket.
+    muzzle: new THREE.Vector3(0, 0.665, 0),
     aim: new THREE.Vector3(-0.03, 1, 0.06),
     offset: new THREE.Vector3(0.018, 0, 0.028),
     build: () => [
@@ -833,11 +900,82 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
       { geometry: blade(0.17, 0.028, 0.014, 0.14, 0.69), role: "steel" },
     ],
   },
+  /**
+   * Napoléon's off-hand: a gilt-mounted flintlock officer's pistol, carried
+   * levelled at the hip rather than upright — the Emperor decides a fight
+   * before anyone is close enough to be cut.
+   */
+  officerPistol: {
+    grip: 0.055,
+    muzzle: new THREE.Vector3(0, 0.262, 0),
+    // Barrel forward and a shade up: the arm reads as levelled, not shouldered.
+    aim: new THREE.Vector3(-0.2, 0.46, 0.87),
+    offset: new THREE.Vector3(0.03, 0.01, 0.03),
+    build: () => [
+      { geometry: box(0.028, 0.1, 0.052, 0.05), role: "wood" },
+      { geometry: box(0.032, 0.022, 0.058, 0.008), role: "gold" },
+      { geometry: box(0.03, 0.056, 0.078, 0.12), role: "wood" },
+      { geometry: box(0.034, 0.03, 0.05, 0.126, 0, -0.026), role: "steel" },
+      { geometry: box(0.014, 0.032, 0.016, 0.148, 0, -0.03), role: "gold" },
+      { geometry: box(0.014, 0.014, 0.03, 0.098, 0, 0.018), role: "gold" },
+      { geometry: shaft(0.14, 0.0135, 0.0115).translate(0, 0.12, 0), role: "steel" },
+      { geometry: shaft(0.115, 0.0045).translate(0, 0.13, 0).translate(0, 0, 0.019), role: "wood" },
+      { geometry: ring(0.0165, 0.0045, 0.255), role: "gold" },
+      { geometry: ball(0.008, 0.155, 0, 0.03), role: "gem" },
+    ],
+  },
+  /**
+   * The battery's gun: a light Gribeauval field piece hauled along beside the
+   * artillery guard, muzzle forward so it can be laid on a target without ever
+   * being turned round. Authored in body axes (front +Z, up +Y) and towed, not
+   * held — see {@link WeaponSpec.towed}.
+   */
+  fieldCannon: {
+    grip: 0,
+    towed: true,
+    park: new THREE.Vector3(0.42, 0, -0.1),
+    muzzle: new THREE.Vector3(0, 0.28, 0.36),
+    aim: new THREE.Vector3(0, 1, 0),
+    offset: new THREE.Vector3(0, 0, 0),
+    build: () => {
+      const parts: Part[] = [
+        // Tube: breech at the back, swelling muzzle at the front.
+        { geometry: tube(0.44, 0.05, 0.042, -0.08, 0.27), role: "gold" },
+        { geometry: ball(0.05, 0.27, 0, -0.095), role: "gold" },
+        { geometry: ball(0.026, 0.27, 0, -0.14), role: "gold" },
+        { geometry: tube(0.035, 0.058, 0.058, 0.33, 0.27), role: "gold" },
+        { geometry: tube(0.02, 0.056, 0.056, 0.02, 0.27), role: "steel" },
+        // Trunnions: the tube sitting in the carriage cheeks.
+        { geometry: box(0.19, 0.024, 0.024, 0.27, 0, 0.12), role: "steel" },
+        // Carriage cheeks and the trail dropped to the ground behind.
+        { geometry: box(0.028, 0.14, 0.38, 0.2, 0.075, 0.02), role: "wood" },
+        { geometry: box(0.028, 0.14, 0.38, 0.2, -0.075, 0.02), role: "wood" },
+        { geometry: box(0.18, 0.03, 0.16, 0.145, 0, 0.06), role: "wood" },
+        { geometry: box(0.155, 0.05, 0.2, 0.07, 0, -0.2), role: "wood" },
+        { geometry: box(0.13, 0.028, 0.06, 0.045, 0, -0.3), role: "gold" },
+        // Lunette at the end of the trail — what the gun is hauled by.
+        { geometry: ring(0.028, 0.008, 0).rotateX(Math.PI / 2).translate(0, 0.05, -0.34), role: "steel" },
+        // Axle and the elevating screw under the breech.
+        { geometry: box(0.4, 0.028, 0.028, 0.2, 0, 0.02), role: "wood" },
+        { geometry: shaft(0.07, 0.011).translate(0, 0.19, 0).translate(0, 0, -0.09), role: "steel" },
+        ...gunWheel(0.19, 0.215, 0.19, 0.02),
+        ...gunWheel(0.19, -0.215, 0.19, 0.02),
+      ];
+      // Imperial eagle on the trail, so the gun is read as French from above.
+      for (const part of eagleParts(0.07, 0, "gold")) {
+        part.geometry.translate(0, 0.098, -0.21);
+        parts.push(part);
+      }
+      return parts;
+    },
+  },
 };
 
 interface Loadout {
   main: WeaponId;
   off?: WeaponId;
+  /** Hauled along rather than held — the artillery's gun. */
+  train?: WeaponId;
 }
 
 /** Right-hand arm and off-hand shield per weapon family and piece kind. */
@@ -861,11 +999,14 @@ const LOADOUT: Record<ArsenalId, Record<PieceKind, Loadout>> = {
   // No shields anywhere except the battery's mantlet: the Grande Armée fights
   // with sabre, musket and gun, and a shield would read as medieval.
   empire: {
-    k: { main: "imperialSabre" },
+    // The pistol goes in the firing hand, the dress sabre to the off hand: the
+    // Emperor's clip draws and shoots with the right, so a sabre there would
+    // leave him aiming a blade with the gun forgotten at his hip.
+    k: { main: "officerPistol", off: "imperialSabre" },
     q: { main: "eagleStaff" },
     b: { main: "marshalBaton" },
     n: { main: "cavalrySabre" },
-    r: { main: "artilleryRammer", off: "eagleShield" },
+    r: { main: "artilleryRammer", train: "fieldCannon" },
     p: { main: "musketBayonet" },
   },
 };
@@ -1004,6 +1145,17 @@ export interface AttachedArms {
    * gathers. Null for arms with no focus (a sword has nothing to cast from).
    */
   focus: THREE.Object3D | null;
+  /**
+   * Empty marker parented at the muzzle of the figure's firearm — the pistol in
+   * the Emperor's fist, the musket's barrel mouth, the field gun's bore. Null
+   * for a figure that carries no gun.
+   */
+  muzzle: THREE.Object3D | null;
+  /**
+   * The towed prop's own group (the gun carriage), so the fight can roll it
+   * back on its wheels when it fires. Null for everyone but the battery.
+   */
+  train: THREE.Object3D | null;
 }
 
 /**
@@ -1022,11 +1174,64 @@ export function attachWeapons(
   baseY = 0,
   arsenal: ArsenalId = "kingdom",
 ): AttachedArms {
-  const arms: AttachedArms = { meshes: [], materials: [], baseEmissive: [], focus: null };
+  const arms: AttachedArms = {
+    meshes: [],
+    materials: [],
+    baseEmissive: [],
+    focus: null,
+    muzzle: null,
+    train: null,
+  };
   const loadout = LOADOUT[arsenal][kind];
 
   root.updateMatrixWorld(true);
   const rootInverse = root.matrixWorld.clone().invert();
+
+  /** Adds the built geometry of a prop under `parent`, in the figure's livery. */
+  const dress = (id: WeaponId, parent: THREE.Object3D): void => {
+    for (const [role, geometry] of weaponGeometries(id)) {
+      const material = makeMaterial(role, color);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = role !== "gem";
+      mesh.frustumCulled = false;
+      parent.add(mesh);
+      arms.meshes.push(mesh);
+      arms.materials.push(material);
+      arms.baseEmissive.push(material.emissiveIntensity);
+    }
+  };
+
+  /**
+   * Parks a towed prop beside the figure. It hangs off the sculpt root in body
+   * axes, so it travels and turns with the figure but is untouched by the
+   * skeleton — a gun carriage must not crouch when its crew does.
+   */
+  const haul = (id: WeaponId): void => {
+    const spec = WEAPONS[id];
+    const park = spec.park ?? new THREE.Vector3(0.4, 0, -0.1);
+    const group = new THREE.Group();
+    group.name = `train_${id}`;
+    group.scale.setScalar(unit);
+    group.position.set(park.x * unit, baseY + park.y * unit, park.z * unit);
+    // Hauled at a slight angle, so the gun reads as being dragged rather than
+    // parked in a battery line.
+    group.rotation.y = -0.14;
+    root.add(group);
+
+    const inner = new THREE.Group();
+    group.add(inner);
+    arms.train = inner;
+
+    if (spec.muzzle) {
+      const muzzle = new THREE.Object3D();
+      muzzle.name = `muzzle_${id}`;
+      muzzle.position.copy(spec.muzzle);
+      inner.add(muzzle);
+      arms.muzzle = muzzle;
+    }
+    dress(id, inner);
+  };
 
   const mount = (id: WeaponId, hand: "right" | "left"): void => {
     const spec = WEAPONS[id];
@@ -1097,20 +1302,22 @@ export function attachWeapons(
       arms.focus = focus;
     }
 
-    for (const [role, geometry] of weaponGeometries(id)) {
-      const material = makeMaterial(role, color);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = role !== "gem";
-      mesh.frustumCulled = false;
-      inner.add(mesh);
-      arms.meshes.push(mesh);
-      arms.materials.push(material);
-      arms.baseEmissive.push(material.emissiveIntensity);
+    // Same trick for a barrel mouth: the flash, the smoke and the ball all
+    // leave the gun itself, wherever the firing arm has swung it. A towed gun
+    // outranks a hand-held one — the battery fires its piece, not its pistol.
+    if (spec.muzzle && !arms.muzzle) {
+      const muzzle = new THREE.Object3D();
+      muzzle.name = `muzzle_${id}`;
+      muzzle.position.copy(spec.muzzle);
+      inner.add(muzzle);
+      arms.muzzle = muzzle;
     }
+
+    dress(id, inner);
   };
 
   mount(loadout.main, "right");
   if (loadout.off) mount(loadout.off, "left");
+  if (loadout.train) haul(loadout.train);
   return arms;
 }

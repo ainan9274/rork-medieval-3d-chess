@@ -81,6 +81,11 @@ export interface PieceAnimationSet {
   walk?: string;
   /** Looping in-place run — the knight's charge through its leap. */
   run?: string;
+  /**
+   * One-shot drill played after a shot: powder, ball, ramrod. Only the
+   * gunpowder army carries one — a swordsman has nothing to reload.
+   */
+  reload?: string;
 }
 
 const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
@@ -192,13 +197,16 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     },
   },
   empire: {
-    // The Emperor never brawls: he passes sentence with the dress sabre.
+    // The Emperor never brawls and never closes: the coat comes open, the
+    // flintlock comes up and the matter is settled from where he stands.
+    // Alternative on the same rig: `...-anim-sword-judgment.glb` (dress sabre).
     k: {
       rigged: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-rigged.glb`,
       idle: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-idle.glb`,
-      attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-sword-judgment.glb`,
+      attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-cowboy-quick-draw-shooting.glb`,
       death: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb`,
       walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
+      reload: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-standing-reload.glb`,
     },
     // The commander fights at range: her cast is the artillery order.
     q: {
@@ -224,21 +232,30 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       walk: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-confident-strut-inplace.glb`,
       run: `${MODEL_BASE}/ebbe76e7-dbc7-4961-bf10-035acee68ee1-anim-standard-forward-charge-inplace.glb`,
     },
+    // The battery: the crew lays the gun it hauls, then serves it. Its "strike"
+    // is the step in to the trail and the shove on the lanyard.
+    // Alternative: `...-anim-heavy-hammer-swing.glb` (rammer swung as a maul).
     r: {
       rigged: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-rigged.glb`,
       idle: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-heavy-hammer-swing.glb`,
+      attack: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-step-forward-and-push.glb`,
       death: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-knock-down.glb`,
       // The gun crew's laden trudge — the heaviest tread on the board.
       walk: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-carry-heavy-cannon-forward-inplace.glb`,
+      // Kneeling at the muzzle with powder and shot once the piece has spoken.
+      reload: `${MODEL_BASE}/044ccbd8-c9d3-452e-8524-4a47034b8fe2-anim-kneeling-reload.glb`,
     },
+    // Line infantry fires a volley rather than closing with the bayonet.
+    // Alternative: `...-anim-thrust-slash.glb` (bayonet thrust).
     p: {
       rigged: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-rigged.glb`,
       idle: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-combat-stance.glb`,
-      attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-thrust-slash.glb`,
+      attack: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-draw-and-shoot-from-back.glb`,
       death: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-knock-down.glb`,
-      // Musket at the shoulder — the line infantry marches, it does not stroll.
-      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-spear-walk-inplace.glb`,
+      // Musket held across the body at the ready — the line advances, it does
+      // not stroll. Alternative: `...-anim-spear-walk-inplace.glb`.
+      walk: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-rifle-charge-inplace.glb`,
+      reload: `${MODEL_BASE}/29b4a2e7-eba2-4ca7-a9f3-e22278c8df9e-anim-standing-reload.glb`,
     },
   },
 };

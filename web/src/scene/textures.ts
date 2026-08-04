@@ -689,6 +689,54 @@ export function pillarTexture(): THREE.CanvasTexture {
   return texture;
 }
 
+/**
+ * Muzzle flash: a white-hot core inside a ragged star of burning powder. Drawn
+ * once and billboarded, so a shot reads from every camera angle on the board.
+ */
+export function muzzleFlashTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const { canvas, ctx } = createCanvas(size);
+  const c = size / 2;
+
+  const halo = ctx.createRadialGradient(c, c, 0, c, c, size * 0.5);
+  halo.addColorStop(0, "rgba(255,255,255,1)");
+  halo.addColorStop(0.12, "rgba(255,248,214,0.95)");
+  halo.addColorStop(0.32, "rgba(255,196,96,0.45)");
+  halo.addColorStop(0.66, "rgba(255,132,40,0.14)");
+  halo.addColorStop(1, "rgba(255,110,30,0)");
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, size, size);
+
+  // Powder does not burn in a circle: uneven petals of flame off the bore.
+  ctx.globalCompositeOperation = "lighter";
+  const petals = 9;
+  for (let i = 0; i < petals; i += 1) {
+    const angle = (i / petals) * Math.PI * 2 + Math.random() * 0.3;
+    const reach = size * (0.26 + Math.random() * 0.22);
+    const width = size * (0.03 + Math.random() * 0.035);
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(angle);
+    const petal = ctx.createLinearGradient(0, 0, reach, 0);
+    petal.addColorStop(0, "rgba(255,252,232,0.85)");
+    petal.addColorStop(0.45, "rgba(255,201,104,0.4)");
+    petal.addColorStop(1, "rgba(255,140,48,0)");
+    ctx.fillStyle = petal;
+    ctx.beginPath();
+    ctx.moveTo(0, -width);
+    ctx.lineTo(reach, 0);
+    ctx.lineTo(0, width);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalCompositeOperation = "source-over";
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /** Vertical light-shaft gradient (bright at the window, fading to the floor). */
 export function shaftTexture(): THREE.CanvasTexture {
   const size = 128;

@@ -197,12 +197,17 @@ export interface PieceClips {
   walk?: THREE.AnimationClip;
   /** Looping in-place run — the knight charging through its leap. */
   run?: THREE.AnimationClip;
+  /**
+   * One-shot drill played after a shot is fired. Only the gunpowder army
+   * carries it — a swordsman has nothing to reload.
+   */
+  reload?: THREE.AnimationClip;
 }
 
 export type ClipName = keyof PieceClips;
 
 /** Every clip a rig can carry, in the order the game needs them. */
-export const CLIP_ORDER: ClipName[] = ["idle", "attack", "death", "walk", "run"];
+export const CLIP_ORDER: ClipName[] = ["idle", "attack", "death", "walk", "run", "reload"];
 
 /**
  * Fetched together with the rig itself. Everything else is pulled in afterwards
@@ -248,11 +253,16 @@ const ROYAL_KINDS: PieceKind[] = ["k", "q"];
  * Target playback lengths. Soldiers snap through their strike; royalty takes a
  * long, deliberate beat so the blow reads as a sentence, not a scuffle.
  */
-function oneShotSeconds(kind: PieceKind, name: "attack" | "death"): number {
+function oneShotSeconds(kind: PieceKind, name: OneShot): number {
   const royal = ROYAL_KINDS.includes(kind);
   if (name === "attack") return royal ? 1.5 : 0.95;
+  // The drill is never hurried: powder, ball, ramrod, back to the shoulder.
+  if (name === "reload") return royal ? 1.25 : 1.05;
   return royal ? 1.15 : 0.85;
 }
+
+/** Clips that play once and hand the body back to its stance afterwards. */
+type OneShot = "attack" | "death" | "reload";
 
 /**
  * One rendered figure. Follows the placement contract:
@@ -265,6 +275,8 @@ export class PieceView {
   readonly visual = new THREE.Group();
   readonly kind: PieceKind;
   readonly color: Faction;
+  /** Weapon family this figure was armed from — the fight reads its style off it. */
+  readonly arsenal: ArsenalId;
 
   private materials: THREE.MeshStandardMaterial[] = [];
   private baseEmissive = 0.05;
@@ -350,6 +362,7 @@ export class PieceView {
   ) {
     this.kind = kind;
     this.color = color;
+    this.arsenal = arsenal;
     this.majestic = ROYAL_KINDS.includes(kind);
 
     this.container.name = `piece_${color}${kind}`;
@@ -729,7 +742,7 @@ export class PieceView {
     this.idleLooping = true;
   }
 
-  private playOneShot(name: "attack" | "death"): number {
+  private playOneShot(name: OneShot): number {
     const action = this.actions.get(name);
     if (!action || !this.mixer) return 0;
     const clip = action.getClip();
@@ -767,6 +780,14 @@ export class PieceView {
     const duration = this.playOneShot("attack");
     // The royal wind-up is longer, so the blow lands later in the clip.
     return { duration, impact: duration * (this.majestic ? 0.56 : 0.42) };
+  }
+
+  /**
+   * Runs the reloading drill after a shot. Returns its length, or 0 when this
+   * rig never learned one — the caller simply skips the beat.
+   */
+  playReload(): number {
+    return this.playOneShot("reload");
   }
 
   /**
@@ -872,6 +893,40 @@ export class PieceView {
   /** True when this figure carries a staff or sceptre it can cast fire from. */
   get canCast(): boolean {
     return this.arms?.focus != null;
+  }
+
+  /** True when this figure has a barrel to fire: pistol, musket or field gun. */
+  get canShoot(): boolean {
+    return this.arms?.muzzle != null;
+  }
+
+  /** True when a gun carriage is hauled along beside this figure. */
+  get hasTrain(): boolean {
+    return this.arms?.train != null;
+  }
+
+  /**
+   * World point a shot leaves from: the mouth of the barrel, read out of the
+   * live pose so the flash sits on the gun wherever the arms have swung it — or,
+   * for the battery, wherever the carriage has been hauled to.
+   */
+  muzzleOrigin(): THREE.Vector3 {
+    const muzzle = this.arms?.muzzle;
+    if (muzzle) {
+      muzzle.updateWorldMatrix(true, false);
+      return muzzle.getWorldPosition(new THREE.Vector3());
+    }
+    return this.castOrigin();
+  }
+
+  /**
+   * Rolls the gun carriage back on its wheels, in figure heights. The gun hangs
+   * off the sculpt root in body axes, so recoil is a shove along its own -Z.
+   */
+  setTrainRecoil(amount: number): void {
+    const train = this.arms?.train;
+    if (!train) return;
+    train.position.z = -Math.max(0, amount);
   }
 
   /**

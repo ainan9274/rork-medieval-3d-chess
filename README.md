@@ -180,15 +180,19 @@ a set of death cries.
 | --- | --- | --- | --- |
 | `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
 | `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
-| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Dress and cavalry sabres, eagle staff of command, marshal's baton, gun rammer, eagle mantlet, musket with fixed bayonet |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, marshal's baton, cavalry sabre, gun rammer with a towed field gun, musket with fixed bayonet |
 
 The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
 breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
 bicorne and dress sabre, the commander's laurel crown and eagle staff, the marshal's plumed hat
 and coat tails, the cuirassier's horsehair-crested helmet over a steel breastplate, the
-artillery guard's bearskin and eagle mantlet, and the infantry's musket — the longest
-silhouette on the board. The two casting ranks keep their range: the commander signals the
-volley from her own square, the marshal orders it with his baton.
+artillery guard's bearskin behind the field gun he hauls, and the infantry's musket — the longest
+silhouette on the board. **This is the one army that fights with powder** (see [Gunpowder
+combat](#gunpowder-combat-pistol-musket-and-field-gun)): Napoléon settles matters with the
+flintlock in his fist, the line infantry fires a volley, and the battery lays and serves the gun
+it drags along. Only the cuirassier still closes, sabre first. The two casting ranks keep their
+own range: the commander signals the volley from her square, the marshal orders it with his
+baton.
 
 Swapping an army re-downloads its rosters, so the swap waits for any fight on screen to finish,
 takes the old figures down and stands the new ones up (a second or two on a cold cache). Give
@@ -237,6 +241,7 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
         │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
         │   ├── spells.ts           fireball orbs, per-army fire, the shared light pool
+        │   ├── gunfire.ts          muzzle flashes, round shot, powder smoke banks
         │   ├── postfx.ts           EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
         │   ├── textures.ts         procedural marble, basalt, bronze, cloth
         │   ├── quality.ts          graphics presets + auto-detection
@@ -332,7 +337,7 @@ printed to the console (`[scene] gpu: …`) and shown under the graphics presets
 
 ## Character animation
 
-Every figure is a rigged (skinned) character with up to five skeletal clips, declared per rank
+Every figure is a rigged (skinned) character with up to six skeletal clips, declared per rank
 in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 
 | Clip | When it plays |
@@ -340,8 +345,9 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released |
+| `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the aim, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
+| `reload` | One-shot drill run after a shot — powder, ball, ramrod. Only the Grande Armée's three gunpowder ranks carry one |
 
 How it is wired (`src/scene/pieces.ts`):
 
@@ -357,7 +363,7 @@ How it is wired (`src/scene/pieces.ts`):
   translation would double the distance.
 - The **Low** preset freezes the stance on its first frame (no per-frame mixer cost) — strikes
   and deaths still play, and the figure slides instead of marching (footsteps still sound).
-- **Clips load in waves, not in one burst.** Twelve rigs × five clips is over seventy GLBs;
+- **Clips load in waves, not in one burst.** Twelve rigs × five or six clips is over seventy GLBs;
   firing them at once made the browser drop requests (`TypeError: Failed to fetch`) and figures
   silently lost their strike, so a capture looked like a piece dying untouched. The rig plus its
   `idle` load first, then `PieceFactory.warmClips()` pulls `attack` → `death` → `walk` → `run`
@@ -444,6 +450,42 @@ instead of a recompile, and the pool is empty on presets without post-processing
 
 The capture dissolve is a shader injection: a noise field eats the body from the soles up with
 a glowing burn edge, while the whole mesh fades and sheds upward-drifting motes.
+
+### Gunpowder combat (pistol, musket and field gun)
+
+The Grande Armée does not fight with witchfire. `attackStyle(kind, arsenal)` in
+`src/scene/sceneEngine.ts` routes captures by its **king, rook and pawn** to
+`playGunCinematic()`; the commander and marshal keep the spell beat, and the cuirassier still
+closes with the sabre. The beat is:
+
+1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
+   or a linstock is heard (`audio.gunLock`) as the barrel comes round.
+2. The strike clip *is* the aim — Napoléon's quick draw, the infantry's shoulder-and-fire, the
+   gun crew's step in to the trail — and the shot leaves on its hit frame.
+3. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
+   `spawnPowderCloud()` leaves a bank of dirty smoke hanging in front of the gun, and
+   `audio.gunshot()` fires the report.
+4. `flyShot()` sends the ball **dead straight and fast** — no arc, no easing; the flatness is
+   what separates a gun from a lobbed spell — trailing wisps of smoke as it goes.
+5. The hit lands: flash, sparks, tile strike, camera kick, and for the field gun a wave rolling
+   out across the stone plus a long aftershock.
+6. `slay()` runs, then `banish()` and the **reload drill run together**, so the body is gone and
+   the barrel is charged again before `glide()` walks the shooter onto the cleared square.
+
+`GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
+board — a dry crack, a puff of smoke, no spectacle. The musket is a hard crack over a chest
+thump and a real bank of white smoke. The field gun is the loudest thing in the hall, louder than
+the crown's judgement: a sub-bass slam with the report coming back off the far wall, and the
+carriage **runs back on its wheels** before the crew heaves it up to the mark again
+(`kickBack()` → `PieceView.setTrainRecoil`). Every voice is synthesised by `calibre` in one
+mixer method — no assets, so a volley never waits on a download.
+
+The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
+barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a
+caster's `focus`. The **field gun is a towed prop**, not a held one: it hangs off the sculpt root
+in body axes with its own wheels, carriage, trail and imperial eagle, so it travels and turns
+with the guard but is untouched by the skeleton — a gun carriage must not crouch when its crew
+does. Flash lights are borrowed from the same fixed `SpellLightPool`.
 
 ## Swapping in your own models
 

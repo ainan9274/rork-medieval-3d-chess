@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import { ARMY_SKINS, type ArmySkinId } from "../assets/generated";
+import { ARMY_SKINS, type ArmySkinId, type ArsenalId } from "../assets/generated";
 import type { GameController } from "../core/gameController";
 import type { Faction, GameSnapshot, MoveEvent, PieceKind, SquareId } from "../core/types";
 import { audio, type FootstepTimbre } from "../audio/audioManager";
@@ -16,6 +16,13 @@ import { EffectsSystem, ShakeSystem } from "./effects";
 import { FACTION_ACCENT, PieceFactory, PieceView, type ClipName, type TemplateKey } from "./pieces";
 import { PostFX } from "./postfx";
 import { QUALITY_SETTINGS, type QualityPreset } from "./quality";
+import {
+  GUN_LOOK,
+  disposeGunAssets,
+  flyShot,
+  spawnMuzzleFlash,
+  spawnPowderCloud,
+} from "./gunfire";
 import { SPELL_LOOK, SpellLightPool, SpellOrb } from "./spells";
 import { disposeStrikeAssets, spawnGroundWave, spawnPillar, spawnSlash } from "./strikes";
 import { Ease, type Easing, TweenManager, wait } from "./tween";
@@ -162,6 +169,27 @@ const GAITS: Record<PieceKind, Gait> = {
  * has burned away.
  */
 const RANGED_KINDS: PieceKind[] = ["q", "b"];
+
+/**
+ * How a rank opens a fight, once its army's arsenal is taken into account.
+ *
+ * - `melee` — walk in and strike (see {@link STRIKES}).
+ * - `spell` — gather fire on the spot and throw it (see {@link SPELLS}).
+ * - `gun` — level a barrel and fire (see {@link GUNS}).
+ *
+ * The Grande Aréme is the one army that fights with powder: its Emperor settles
+ * matters with a flintlock, its line infantry with a musket volley and its
+ * battery with the field gun it hauls. Only the cuirassier still closes, sabre
+ * first — which is exactly what a cavalryman is for.
+ */
+type AttackStyle = "melee" | "spell" | "gun";
+
+const GUNPOWDER_KINDS: PieceKind[] = ["k", "r", "p"];
+
+function attackStyle(kind: PieceKind, arsenal: ArsenalId): AttackStyle {
+  if (arsenal === "empire" && GUNPOWDER_KINDS.includes(kind)) return "gun";
+  return RANGED_KINDS.includes(kind) ? "spell" : "melee";
+}
 
 /**
  * How one rank's blow is staged. The shape of a hand-to-hand kill never changes
@@ -323,6 +351,144 @@ const QUEEN_SPELL: SpellProfile = { zoom: 7.5, gather: 0.28, orb: 0.66, bolts: 3
 function spellProfile(kind: PieceKind): SpellProfile {
   return kind === "q" ? QUEEN_SPELL : MAGE_SPELL;
 }
+
+/**
+ * How one barrel behaves. Everything scales off the bore: a flintlock pistol is
+ * a crack and a puff of smoke, a musket puts a man down, and a field gun
+ * rearranges the square it is laid on.
+ */
+interface GunProfile {
+  /** Degrees of lens punch-in held over the beat. */
+  zoom: number;
+  /** Held breath between levelling the barrel and firing. */
+  aim: number;
+  /** 0 = pistol lock, 0.5 = musket, 1 = field gun — drives the whole mix. */
+  calibre: number;
+  /** Width of the muzzle flash in world units. */
+  flash: number;
+  /** Diameter of the ball in flight. */
+  ball: number;
+  /** Seconds the ball spends crossing one tile. */
+  speed: number;
+  /** Puffs in the bank of smoke left hanging in front of the barrel. */
+  smoke: number;
+  /** Scales the hit at the far end: flash, sparks, tile strike and shake. */
+  blast: number;
+  /** How far the body is thrown back by the shot, in tiles. */
+  kick: number;
+  /** How far a towed gun rolls back on its wheels, in figure heights. */
+  recoil: number;
+  /** Wave rolled out across the stone where the shot lands; null for none. */
+  wave: { radius: number; color: number } | null;
+  /** Hitstop on the frame the ball arrives. */
+  hold: number;
+  /** Second tremor a beat after the shot; 0 leaves the hall still. */
+  aftershock: number;
+}
+
+/**
+ * The three barrels of the Grande Armée, in order of what they are worth.
+ *
+ * The pistol is deliberately the quietest kill on the board — the Emperor does
+ * not need spectacle — and the field gun is by far the loudest thing in the
+ * hall, louder even than the crown's judgement.
+ */
+const GUNS: Record<PieceKind, GunProfile> = {
+  // Officer's flintlock: raised, fired, done. No smoke bank worth the name.
+  k: {
+    zoom: 7,
+    aim: 0.2,
+    calibre: 0.06,
+    flash: 0.44,
+    ball: 0.06,
+    speed: 0.028,
+    smoke: 4,
+    blast: 1.1,
+    kick: 0.05,
+    recoil: 0,
+    wave: null,
+    hold: 0.06,
+    aftershock: 0,
+  },
+  // Charleville musket: shouldered, a hard crack and a bank of white smoke.
+  p: {
+    zoom: 5.5,
+    aim: 0.14,
+    calibre: 0.44,
+    flash: 0.6,
+    ball: 0.075,
+    speed: 0.03,
+    smoke: 6,
+    blast: 1,
+    kick: 0.07,
+    recoil: 0,
+    wave: null,
+    hold: 0.05,
+    aftershock: 0,
+  },
+  // Field gun: the crew stands clear, the piece rolls back and the stone rings.
+  r: {
+    zoom: 10,
+    aim: 0.3,
+    calibre: 1,
+    flash: 1.35,
+    ball: 0.15,
+    speed: 0.024,
+    smoke: 11,
+    blast: 2.1,
+    kick: 0.04,
+    recoil: 0.19,
+    wave: { radius: 3.6, color: 0xffb271 },
+    hold: 0.12,
+    aftershock: 0.32,
+  },
+  // Never reached — the cuirassier charges, and the court fights with fire.
+  q: {
+    zoom: 6,
+    aim: 0.16,
+    calibre: 0.4,
+    flash: 0.55,
+    ball: 0.07,
+    speed: 0.03,
+    smoke: 5,
+    blast: 1,
+    kick: 0.06,
+    recoil: 0,
+    wave: null,
+    hold: 0.05,
+    aftershock: 0,
+  },
+  b: {
+    zoom: 6,
+    aim: 0.16,
+    calibre: 0.4,
+    flash: 0.55,
+    ball: 0.07,
+    speed: 0.03,
+    smoke: 5,
+    blast: 1,
+    kick: 0.06,
+    recoil: 0,
+    wave: null,
+    hold: 0.05,
+    aftershock: 0,
+  },
+  n: {
+    zoom: 6,
+    aim: 0.16,
+    calibre: 0.4,
+    flash: 0.55,
+    ball: 0.07,
+    speed: 0.03,
+    smoke: 5,
+    blast: 1,
+    kick: 0.06,
+    recoil: 0,
+    wave: null,
+    hold: 0.05,
+    aftershock: 0,
+  },
+};
 
 /**
  * A marching distance profile: a short push-off, a long stretch at constant
@@ -994,9 +1160,13 @@ export class SceneEngine {
         // actually hold those clips before the fight starts.
         await this.armCombat(piece, victim);
         try {
-          // The casters kill at range; everyone else has to walk into the blow.
-          if (RANGED_KINDS.includes(piece.kind))
+          // Casters burn their victims and gunners shoot them, both from where
+          // they stand; everyone else has to walk into the blow.
+          const style = attackStyle(piece.kind, piece.arsenal);
+          if (style === "spell")
             await this.playSpellCinematic(piece, victim, from, to, strikeSquare);
+          else if (style === "gun")
+            await this.playGunCinematic(piece, victim, from, to, strikeSquare);
           else await this.playCaptureCinematic(piece, victim, from, to, strikeSquare);
         } catch (error) {
           // A broken effect must never strand a figure in the middle of a fight:
@@ -1621,6 +1791,277 @@ export class SceneEngine {
     this.focusPiece(attacker, 0.94);
     await this.glide(attacker, from, to, false, 1.15);
     audio.play("place", 0.5);
+  }
+
+  /**
+   * The gunpowder beat. The Grande Armée never walks into a fight it can settle
+   * from where it stands: the barrel is levelled, the hammer goes back, the
+   * shot crosses the board flat and fast, and the body is already down and
+   * cleared before the shooter takes a single step onto the square. Which
+   * barrel is doing the talking is read out of {@link GUNS} for the rank — the
+   * Emperor's flintlock, the line's musket, or the battery's field gun.
+   */
+  private async playGunCinematic(
+    attacker: PieceView,
+    victim: PieceView,
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    strikeSquare: SquareId,
+  ): Promise<void> {
+    const gun = GUNS[attacker.kind];
+    const settings = QUALITY_SETTINGS[this.preset];
+    const look = GUN_LOOK[attacker.color];
+
+    // En passant aside the victim stands on the destination square; either way
+    // the ball flies at the body and throws it away from the shooter.
+    const victimSpot = victim.container.position.clone();
+    const blow = victimSpot.clone().sub(from).setY(0);
+    if (blow.lengthSq() < 1e-6) blow.copy(to.clone().sub(from).setY(0));
+    if (blow.lengthSq() < 1e-6) blow.set(0, 0, 1);
+    blow.normalize();
+
+    // A duel at range: hold both ends of the shot in frame.
+    this.focusPoint(from.clone().lerp(victimSpot, 0.55), 0.92);
+    const originalFov = this.camera.fov;
+    void this.tweens.to({
+      duration: 0.26,
+      easing: Ease.outCubic,
+      onUpdate: (t) => {
+        this.camera.fov = originalFov - gun.zoom * t;
+        this.camera.updateProjectionMatrix();
+      },
+    });
+
+    // The barrel comes round; the target sees what is pointed at it.
+    await Promise.all([
+      attacker.turnTowards(victimSpot, this.tweens, 0.32),
+      victim.turnTowards(from, this.tweens, 0.32),
+    ]);
+    attacker.faceTowards(victimSpot);
+
+    // Lock, ramrod or linstock: the mechanical tick that says "firearm".
+    audio.gunLock({
+      pan: this.stereoPan(from),
+      weight: gun.calibre,
+      volume: 0.5 + gun.calibre * 0.5,
+    });
+    await wait(gun.aim);
+
+    // The firing clip doubles as the aim: the shot leaves on the frame the clip
+    // would have landed its blow. A rig whose clip never arrived levels the
+    // barrel by hand instead, so a gunner always visibly fires.
+    const fire = attacker.hasClip("attack") ? attacker.playAttack() : null;
+    const byHand = !fire || fire.duration <= 0;
+    if (byHand) {
+      await this.tweens.to({
+        duration: 0.26,
+        easing: Ease.outCubic,
+        onUpdate: (t) => attacker.setStrikeTilt(-0.14 * t),
+      });
+    } else {
+      await wait(fire.impact);
+    }
+
+    // ---- the shot ------------------------------------------------------
+    const muzzle = attacker.muzzleOrigin();
+    const chest = victimSpot.clone().setY(0.58);
+    const line = chest.clone().sub(muzzle);
+    const distance = Math.max(0.001, line.length());
+    const aim = line.divideScalar(distance);
+
+    audio.gunshot({
+      pan: this.stereoPan(muzzle),
+      weight: gun.calibre,
+      volume: 1,
+    });
+    this.shake.add(Math.min(1, 0.3 + gun.calibre * 0.7));
+
+    void spawnMuzzleFlash(this.scene, this.tweens, muzzle, {
+      look,
+      size: gun.flash,
+      direction: aim,
+      life: 0.09 + gun.calibre * 0.06,
+      light: settings.postFx ? this.spellLights.acquire(look.light, 4.4) : null,
+    });
+    void spawnPowderCloud(this.scene, this.tweens, muzzle, {
+      look,
+      size: 0.34 + gun.calibre * 0.7,
+      direction: aim,
+      count: Math.max(3, Math.round(gun.smoke * (settings.captureParticles >= 34 ? 1 : 0.5))),
+      life: 1.2 + gun.calibre * 1.1,
+    });
+    // Sparks and burning grains thrown out of the pan and the bore.
+    this.effects.spawnBurst(muzzle, look.ball, Math.round(settings.captureParticles * 0.3 * (0.5 + gun.calibre)), {
+      speed: 2.2 + gun.calibre * 2.4,
+      life: 0.5,
+      gravity: 2.4,
+      radius: 0.06,
+      size: 0.07,
+      drag: 2.4,
+    });
+
+    // Recoil: the body rocks back off the shot, and a towed gun runs back on
+    // its wheels before the crew heaves it up to the mark again.
+    this.kickBack(attacker, blow, gun);
+
+    // Round shot travels flat: no arc, no easing, gone almost before it is seen.
+    const smoking = settings.captureParticles >= 34;
+    let nextWisp = 0.12;
+    await flyShot(this.scene, this.tweens, muzzle, chest, {
+      look,
+      size: gun.ball,
+      flight: THREE.MathUtils.clamp((distance / TILE) * gun.speed, 0.05, 0.2),
+      light: null,
+      onTrail: (at, t) => {
+        if (!smoking || t < nextWisp) return;
+        nextWisp += 0.22;
+        this.effects.spawnSmoke(at.clone(), {
+          count: 1,
+          radius: 0.06,
+          scale: 0.2 + gun.calibre * 0.22,
+          growth: 2.4,
+          life: 0.5,
+          speed: 0.2,
+          rise: 0.16,
+          color: look.smoke,
+          opacity: 0.2,
+        });
+      },
+    });
+
+    // ---- the hit -------------------------------------------------------
+    const power = gun.blast;
+    audio.play("capture", Math.min(1, 0.7 * power));
+    this.strikeImpact(strikeSquare, Math.min(1.5, power));
+    this.effects.spawnFlash(chest, Math.min(4.6, 1.9 * power), 0.2);
+    this.effects.spawnBurst(chest, look.flash, Math.round(settings.captureParticles * 0.8 * power), {
+      speed: 3.6 * (0.9 + power * 0.1),
+      life: 0.6,
+      gravity: 2.2,
+      radius: 0.1,
+    });
+    this.effects.spawnSmoke(chest, {
+      count: Math.max(2, Math.round(settings.captureParticles * 0.14 * power)),
+      radius: 0.24 * power,
+      scale: 0.45 * power,
+      growth: 2.6,
+      life: 0.9,
+      speed: 1,
+      rise: 0.5,
+      color: look.smoke,
+      opacity: 0.4,
+    });
+    this.shake.add(Math.min(1, 0.3 * power));
+
+    // A field gun does not stop at the body: the stone takes the rest of it.
+    if (gun.wave) {
+      audio.groundSlam({ pan: this.stereoPan(victimSpot), volume: Math.min(1, power * 0.5) });
+      void spawnGroundWave(this.scene, this.tweens, victimSpot, {
+        color: gun.wave.color,
+        radius: gun.wave.radius,
+        height: BOARD_TOP + 0.03,
+        echo: true,
+      });
+      this.effects.spawnSmoke(victimSpot.clone().setY(BOARD_TOP + 0.12), {
+        count: Math.max(4, Math.round(settings.captureParticles * 0.28)),
+        radius: 0.52,
+        scale: 0.8,
+        growth: 3.2,
+        life: 1.3,
+        speed: 2.2,
+        rise: 0.1,
+        color: 0x9c8f7d,
+        opacity: 0.5,
+      });
+    }
+
+    if (gun.hold > 0) await wait(gun.hold);
+    if (gun.aftershock > 0) void this.aftershock(strikeSquare, gun.aftershock);
+
+    // Shot dead where it stood, before the shooter has moved a boot.
+    await this.slay(victim, blow);
+
+    void this.tweens.to({
+      duration: 0.45,
+      easing: Ease.outCubic,
+      onUpdate: (t) => {
+        this.camera.fov = originalFov - gun.zoom * (1 - t);
+        this.camera.updateProjectionMatrix();
+      },
+    });
+
+    // The body is cleared while the gun is served again — nobody advances on a
+    // square with an empty barrel.
+    await Promise.all([this.banish(victim, blow), this.reload(attacker, gun)]);
+
+    // ...and only now is the square walked to.
+    this.focusPiece(attacker, 0.94);
+    await this.glide(attacker, from, to, false, 1.1);
+    audio.play("place", 0.5);
+  }
+
+  /**
+   * Recoil. The shooter rocks back off the shot and settles; a towed gun runs
+   * back hard on its wheels and is heaved up to the mark again, which is what
+   * sells the weight of the charge more than any amount of smoke.
+   */
+  private kickBack(attacker: PieceView, blow: THREE.Vector3, gun: GunProfile): void {
+    const reach = TILE * gun.kick;
+    void (async () => {
+      await this.tweens.to({
+        duration: 0.07,
+        easing: Ease.outQuint,
+        onUpdate: (t) => {
+          attacker.runtime.position.x = -blow.x * reach * t;
+          attacker.runtime.position.z = -blow.z * reach * t;
+          attacker.setStrikeTilt(-0.16 * t);
+        },
+      });
+      await this.tweens.to({
+        duration: 0.34,
+        easing: Ease.outCubic,
+        onUpdate: (t) => {
+          attacker.runtime.position.x = -blow.x * reach * (1 - t);
+          attacker.runtime.position.z = -blow.z * reach * (1 - t);
+          attacker.setStrikeTilt(-0.16 * (1 - t));
+        },
+      });
+      attacker.runtime.position.x = 0;
+      attacker.runtime.position.z = 0;
+      attacker.setStrikeTilt(0);
+    })();
+
+    if (gun.recoil <= 0 || !attacker.hasTrain) return;
+    void (async () => {
+      await this.tweens.to({
+        duration: 0.09,
+        easing: Ease.outQuint,
+        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * t),
+      });
+      // Hauled back up to the mark: slower than it went back, as it would be.
+      await this.tweens.to({
+        duration: 0.9,
+        easing: Ease.inOutCubic,
+        onUpdate: (t) => attacker.setTrainRecoil(gun.recoil * (1 - t)),
+      });
+      attacker.setTrainRecoil(0);
+    })();
+  }
+
+  /**
+   * Serving the piece again after a shot: the drill clip if the rig carries one,
+   * with the ramrod and the lock heard over it. Kept to the length of the body
+   * being cleared away, so the beat costs the fight nothing.
+   */
+  private async reload(attacker: PieceView, gun: GunProfile): Promise<void> {
+    if (!attacker.hasClip("reload")) return;
+    const pan = this.stereoPan(attacker.container.position);
+    const length = attacker.playReload();
+    if (length <= 0) return;
+    audio.gunLock({ pan, weight: gun.calibre, volume: 0.42, delay: length * 0.28 });
+    audio.gunLock({ pan, weight: gun.calibre * 0.6, volume: 0.32, delay: length * 0.62 });
+    await wait(Math.min(length, 0.95));
+    attacker.playIdle(0.22);
   }
 
   /** Caster with no clip: the shoulders go back over the gathering fire. */
@@ -3313,6 +3754,7 @@ export class SceneEngine {
     this.effects.dispose();
     this.spellLights.dispose();
     disposeStrikeAssets();
+    disposeGunAssets();
     this.board.dispose();
     this.hall.dispose();
     this.battlefield.dispose();

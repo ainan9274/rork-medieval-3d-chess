@@ -81,6 +81,7 @@ src/
     effects.ts         particle bursts, flashes, dissolve, camera shake
     strikes.ts         per-rank blow visuals (slash arc, ground wave, pillar)
     spells.ts          fireball orbs, per-army fire, the shared light pool
+    gunfire.ts         muzzle flashes, round shot, powder smoke banks
     postfx.ts          EffectComposer pipeline (bloom, SSAO, DOF, grade, SMAA, clarity)
     textures.ts        procedural marble, basalt, bronze, cloth
     quality.ts         graphics presets + auto-detection
@@ -157,8 +158,8 @@ under `kg.armies`:
 | `sun` | Sun Empire — Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | `sun` |
 | `empire` | Grande Armée — Napoléon, Imperial Commander, Marshal, Cuirassier, Artillery Guard, Line Infantry | `empire` |
 
-One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five clips per
-rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
+One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five or six
+clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
 `SceneEngine.setArmySkins` runs the swap in the background: it waits for any move animation to
 finish, marks the factory stale and rebuilds (taking the old figures down before their shared
 geometry is freed), reloads the rosters, stands the new army up and repoints the mixer's voices.
@@ -167,7 +168,7 @@ the other side falls through `applyFactionLook()` and is tinted into dark livery
 
 ## Character animation
 
-Every figure is a rigged (skinned) character with up to five skeletal clips, listed per kind in
+Every figure is a rigged (skinned) character with up to six skeletal clips, listed per kind in
 its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 
 | Clip | When it plays |
@@ -175,8 +176,9 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire |
+| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the aim, and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
+| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée's king, rook and pawn carry one |
 
 How it is wired (`src/scene/pieces.ts`):
 
