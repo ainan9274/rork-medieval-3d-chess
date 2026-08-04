@@ -218,16 +218,19 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
     },
     // The Empire's marksman. He carries no staff and casts nothing: the rifle
     // comes up, he goes down on one knee, and the shot is taken from there.
-    //   * stance  — rifle at the ready, lowered and raised as he scans the hall
-    //   * strike  — down on a knee, barrel levelled, fired from the kneel
+    //   * stance  — waits out the turn already down on one knee, rifle up and
+    //     scanning: the sharpshooter silhouette reads at a glance from the
+    //     high camera, and it is the same kneel the strike fires from, so the
+    //     shot grows out of the pose instead of restaging it.
+    //   * strike  — barrel levelled from that kneel and fired
     //   * stride  — rifle carried across the body at the advance
     //   * reload  — powder and ball, still on the knee he fired from
-    // Alternatives on the same rig: `...-anim-crouchlookaroundbow.glb` (waits
-    // out the turn kneeling), `...-anim-combat-stance.glb` (bare-fisted guard),
+    // Alternatives on the same rig: `...-anim-lower-weapon-look-raise.glb`
+    // (stands at the ready), `...-anim-combat-stance.glb` (bare-fisted guard),
     // `...-anim-charged-spell-cast-1.glb` (the old staff-of-office cast).
     b: {
       rigged: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-rigged.glb`,
-      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-lower-weapon-look-raise.glb`,
+      idle: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-crouchlookaroundbow.glb`,
       attack: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-female-crouch-pick-gun-point-forward.glb`,
       death: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-dead.glb`,
       walk: `${MODEL_BASE}/779c54d4-67b3-4e69-948a-fdcc8c58ae5c-anim-rifle-charge-inplace.glb`,

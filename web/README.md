@@ -173,7 +173,7 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 
 | Clip | When it plays |
 | --- | --- |
-| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
+| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal is the exception: he waits out the turn **down on one knee** with the rifle up, the same kneel his shot is fired from |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
 | `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the aim — the marshal's is a drop onto one knee with the rifle levelled — and the hit frame is the shot |

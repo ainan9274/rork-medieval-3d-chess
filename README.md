@@ -189,7 +189,7 @@ and coat tails over the longest barrel on the board, the cuirassier's horsehair-
 over a steel breastplate, the artillery guard's bearskin behind the field gun he hauls, and the
 infantry's musket. **This is the one army that fights with powder** (see [Gunpowder
 combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)): Napoléon settles matters with the
-flintlock in his fist, the marshal drops to one knee and takes the shot with a rifle, the line
+flintlock in his fist, the marshal waits out the game on one knee and shoots from it with a rifle, the line
 infantry fires a volley, and the battery lays and serves the gun it drags along. Only the
 cuirassier still closes, sabre first, and only the Imperial Commander still fights with fire —
 she signals the volley from her own square.
@@ -342,7 +342,7 @@ in its army's `animated` roster (`ARMY_SKINS` in `src/assets/generated.ts`):
 
 | Clip | When it plays |
 | --- | --- |
-| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep |
+| `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. One exception: the Grande Armée's marshal holds a **kneeling** stance — rifle up, scanning — which is also the kneel his strike fires from, so the shot grows out of the pose instead of restaging it |
 | `walk` | Looping in-place stride, retimed to the cadence of the move that is under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
 | `attack` | One-shot strike the moment a capture lands — sparks, shake and clash are timed to the hit frame. For the queen and the mage the same clip is the incantation, and its hit frame is the moment the fireball is released; for the Grande Armée's gunpowder ranks it is the aim (the marshal's is a drop onto one knee), and the hit frame is the shot |
