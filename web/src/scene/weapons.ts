@@ -107,8 +107,8 @@ interface WeaponSpec {
    *
    * A firearm's whole point is that the barrel goes wherever the arms put it, so
    * a fixed body-space angle leaves it standing upright through an aiming clip:
-   *  - `"longArm"` — the axis runs from the trigger fist through the support
-   *    fist, so a shouldered or kneeling clip levels the barrel by itself.
+   *  - `"longArm"` — laid downrange, with the two fists supplying the cant and
+   *    the elevation (see {@link LONG_ARM_CANT}).
    *  - `"sidearm"` — the axis follows the forearm, lifted toward the figure's
    *    front so a hanging arm reads as a pistol carried low, not dropped.
    *
@@ -1211,6 +1211,45 @@ function gunOrientation(direction: THREE.Vector3, out: THREE.Quaternion): THREE.
   return out.setFromRotationMatrix(basisMatrix.makeBasis(x, y, z));
 }
 
+/**
+ * How much of the fists' lateral spread a long arm's barrel inherits.
+ *
+ * The barrel *was* taken straight from the line between the two fists, on the
+ * assumption that a shouldered clip puts the support hand out on the forestock.
+ * Measured on the rigs that actually shoot, that assumption is false: the
+ * Grande Armée's aim takes are archery clips, and in them the fists sit side by
+ * side **across the chest** — the hand line runs 0.90–1.00 along the figure's
+ * lateral axis, leaving almost nothing along its front. Which is bad enough on
+ * its own (the musket lay across the man rather than pointing anywhere), but the
+ * residue that was being used as the barrel's *direction* also changes sign
+ * several times per loop: the line infantry's aim reads front = −0.24, −0.23,
+ * +0.27, +0.54, +0.40, −0.22, +0.02, −0.28 across one scan, and its firing clip
+ * is at −0.26 on the authored ignition frame. So the musket swung between
+ * pointing downrange and pointing back over its owner's shoulder, and the shot
+ * was taken from the reversed half.
+ *
+ * The fists are therefore read for *cant and elevation only*, and the barrel is
+ * laid downrange — the shooter has already turned to face what he is shooting
+ * at (`PieceView.faceTowards`), so his own front is where the muzzle belongs.
+ * This is the guarantee the `sidearm` hold has always had through its front
+ * bias, and the one the long arm was missing.
+ *
+ * At 0.4 a levelled musket lies about 20° across the body — butt in the firing
+ * shoulder, muzzle crossing toward the support hand — which is what a shouldered
+ * long arm looks like from the board's camera. Much higher and it goes back to
+ * lying across the chest.
+ */
+const LONG_ARM_CANT = 0.4;
+
+/** How much of the fists' height difference becomes barrel elevation. */
+const LONG_ARM_PITCH = 0.8;
+
+/**
+ * Elevation the pose may ask for, either way. A clip that throws one fist high
+ * (a reload, a body dropping through a death) must not stand the barrel up.
+ */
+const LONG_ARM_PITCH_LIMIT = 0.6;
+
 const axisX = new THREE.Vector3();
 const axisY = new THREE.Vector3();
 const axisZ = new THREE.Vector3();
@@ -1223,6 +1262,7 @@ const fistQuaternion = new THREE.Quaternion();
 const fistScale = new THREE.Vector3();
 const partnerPosition = new THREE.Vector3();
 const barrelAxis = new THREE.Vector3();
+const handLine = new THREE.Vector3();
 const propRotation = new THREE.Quaternion();
 const boneInverse = new THREE.Quaternion();
 
@@ -1231,7 +1271,7 @@ interface HeldRig {
   mode: "longArm" | "sidearm";
   /** Hand the prop hangs off — the trigger fist. */
   bone: THREE.Bone;
-  /** Support fist (`longArm`) or the forearm the barrel follows (`sidearm`). */
+  /** The other fist (`longArm`) or the forearm the barrel follows (`sidearm`). */
   partner: THREE.Bone | null;
   group: THREE.Group;
   /** Wrist shift in body axes, already mirrored for the holding side. */
@@ -1278,14 +1318,20 @@ function alignHeld(root: THREE.Object3D, held: HeldRig[], unit: number): void {
       boneLocal.multiplyMatrices(rootWorldInverse, rig.partner.matrixWorld);
       partnerPosition.setFromMatrixPosition(boneLocal);
       if (rig.mode === "longArm") {
-        // Trigger fist to support fist: the line the two hands agree on *is* the
-        // barrel, so a kneeling aim, a shouldered carry and a march all read.
-        barrelAxis.copy(partnerPosition).sub(fistPosition);
-        // Fists together (a clip that never held a gun) says nothing; so does a
-        // support hand behind the trigger hand, which would aim at the owner.
-        solved =
-          barrelAxis.lengthSq() > (0.075 * unit) ** 2 &&
-          barrelAxis.z > -0.45 * barrelAxis.length();
+        // Downrange, canted and pitched by how the two fists are holding it —
+        // never *aimed* by them, because they do not straddle the barrel in the
+        // clips this army fires from (see {@link LONG_ARM_CANT}).
+        handLine.copy(partnerPosition).sub(fistPosition);
+        if (handLine.lengthSq() > (0.06 * unit) ** 2) {
+          handLine.normalize();
+          barrelAxis.set(
+            handLine.x * LONG_ARM_CANT,
+            THREE.MathUtils.clamp(handLine.y, -LONG_ARM_PITCH_LIMIT, LONG_ARM_PITCH_LIMIT) *
+              LONG_ARM_PITCH,
+            1,
+          );
+          solved = true;
+        }
       } else {
         // Forearm through the wrist, lifted toward the figure's front: an arm
         // hanging at rest then carries the pistol low instead of at its own boot.

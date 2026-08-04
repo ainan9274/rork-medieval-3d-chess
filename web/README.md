@@ -595,13 +595,28 @@ body-space angle, which is fine for a blade at rest but leaves a rifle standing 
 through an aiming clip. Firearms declare `hold` in `weapons.ts` instead and are re-solved against
 the live skeleton every frame (`AttachedArms.align()`, called right after the mixer):
 
-- `"longArm"` (marksman's rifle, line musket) takes the barrel line straight from the pose — the
-  vector from the trigger fist to the support fist. Whatever the clip does, the two hands agree on
-  where the gun points, so a kneeling aim levels the barrel, a march carries it across the body and
-  the muzzle marker follows. A clip whose fists are together, or whose support hand is *behind* the
-  trigger hand, is ignored and the upright carry is kept.
+- `"longArm"` (marksman's rifle, line musket) is laid **downrange** — along the figure's own front,
+  since a shooter has already turned to face what he is shooting at — with the two fists supplying
+  only the cant (`LONG_ARM_CANT`, 0.4) and the elevation (`LONG_ARM_PITCH`, 0.8, clamped to ±0.6).
+  A levelled musket therefore lies about 20° across the body, butt in the firing shoulder and muzzle
+  crossing toward the support hand, and the muzzle marker follows.
+
+  It used to take the barrel line *straight* from the vector between the two fists, on the assumption
+  that a shouldered clip puts the support hand out on the forestock. Measured on the rigs that
+  actually shoot, that assumption is false. The Grande Armée's aim takes are archery clips, and in
+  them the fists sit side by side **across the chest**: the hand line runs 0.90–1.00 along the
+  figure's lateral axis, leaving almost nothing along its front — and the residue that was being used
+  as the barrel's direction changes sign several times per loop. The line infantry's aim reads front
+  = −0.24, −0.23, +0.27, +0.54, +0.40, −0.22, +0.02, −0.28 across one scan, and its firing clip is at
+  −0.26 on the authored ignition frame, so the musket swung between pointing downrange and pointing
+  back over its owner's shoulder — and the shot was taken from the reversed half. Under the current
+  rule every clip on both rigs (stance, aim, strike, march, reload, rise, death) sits 3–22° off the
+  front with no sign changes anywhere.
 - `"sidearm"` (the officer's flintlock) follows the forearm through the wrist, lifted toward the
   figure's front so an arm hanging at rest carries the pistol low rather than aiming at its own boot.
+  That front bias is why the pistols never reversed — the Emperor's and the commander's aim clips are
+  the *same* mirrored archery takes, but their barrels were already guaranteed downrange. The long
+  arm simply lacked the equivalent guarantee.
 
 Roll is taken from the barrel pitched a quarter turn about the figure's lateral axis — the one rule
 that holds at both ends of the swing (trigger guard forward when upright, floorward when levelled)

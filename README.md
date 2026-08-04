@@ -1012,14 +1012,29 @@ forwards to come up — rather than crossfades between two heights.
 suits a blade at rest, but it leaves a rifle standing straight up through an aiming clip.
 Firearms therefore declare `hold` in `src/scene/weapons.ts` and their angle is re-solved against
 the live skeleton every frame (`AttachedArms.align()`, called right after the mixer): a `longArm`
-takes its barrel line from the vector between the trigger fist and the support fist, so the pose
-itself levels the rifle when the marksman kneels to aim and carries it across the body on the
-march; a `sidearm` follows the forearm through the wrist, lifted toward the figure's front so a
-hanging arm carries the pistol low instead of aiming at its own boot. Roll comes from the barrel
-pitched a quarter turn about the lateral axis — trigger guard forward when upright, floorward when
-levelled, no flip in between. Carried guns are exempt from the floor-clearance clamp that keeps
-grounded shafts out of the board, which is what had the crouching marksman gripping his rifle by
-the butt plate.
+is laid **downrange** — along the figure's own front, since a shooter has already turned to face
+what he is shooting at — with the two fists supplying only the cant and the elevation, so a
+levelled musket lies about 20° across the body with the butt in the firing shoulder; a `sidearm`
+follows the forearm through the wrist, lifted toward the figure's front so a hanging arm carries the
+pistol low instead of aiming at its own boot. Roll comes from the barrel pitched a quarter turn
+about the lateral axis — trigger guard forward when upright, floorward when levelled, no flip in
+between. Carried guns are exempt from the floor-clearance clamp that keeps grounded shafts out of
+the board, which is what had the crouching marksman gripping his rifle by the butt plate.
+
+**The fists do not straddle the barrel.** The long arm used to take its barrel line *straight* from
+the vector between the two fists, on the assumption that a shouldered clip puts the support hand out
+on the forestock. Measured on the rigs that actually shoot, it does not. The Grande Armée's aim takes
+are archery clips, and in them the fists sit side by side **across the chest**: the hand line runs
+0.90–1.00 along the figure's lateral axis, leaving almost nothing along its front — and the residue
+that was being used as the barrel's *direction* changes sign several times per loop. The line
+infantry's aim reads front = −0.24, −0.23, +0.27, +0.54, +0.40, −0.22, +0.02, −0.28 across one scan,
+and its firing clip is at −0.26 on the authored ignition frame — so the musket swung between
+pointing downrange and pointing back over its owner's shoulder, and **the shot was taken from the
+reversed half**. The marksman's rifle marched backwards on all nine samples of its charge cycle for
+the same reason. The pistols never showed it because the `sidearm` rule has always carried a front
+bias; the long arm simply lacked the equivalent guarantee. It now has one, and every clip on both
+rigs (stance, aim, strike, march, reload, rise, death) sits 3–22° off the front with no sign changes
+anywhere.
 
 The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
 barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a
