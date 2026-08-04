@@ -17,7 +17,7 @@ import * as THREE from "three";
 
 import type { Faction } from "../core/types";
 import type { SpellLight } from "./spells";
-import { muzzleFlashTexture, radialTexture, smokeTexture } from "./textures";
+import { fineSmokeTexture, muzzleFlashTexture, radialTexture, smokeTexture } from "./textures";
 
 /** How one army's powder burns. Both sides use the same charge; only the
  * livery tint of the smoke differs, so a volley always reads as gunpowder
@@ -41,6 +41,7 @@ export const GUN_LOOK: Record<Faction, GunLook> = {
 let flashMap: THREE.CanvasTexture | null = null;
 let ballMap: THREE.CanvasTexture | null = null;
 let puffMap: THREE.CanvasTexture | null = null;
+let finePuffMap: THREE.CanvasTexture | null = null;
 
 function sharedFlashMap(): THREE.CanvasTexture {
   if (!flashMap) flashMap = muzzleFlashTexture();
@@ -57,14 +58,22 @@ function sharedPuffMap(): THREE.CanvasTexture {
   return puffMap;
 }
 
+/** The paler, threadier bloom a rifled barrel leaves. */
+function sharedFinePuffMap(): THREE.CanvasTexture {
+  if (!finePuffMap) finePuffMap = fineSmokeTexture();
+  return finePuffMap;
+}
+
 /** Frees the shared maps (scene teardown). */
 export function disposeGunAssets(): void {
   flashMap?.dispose();
   ballMap?.dispose();
   puffMap?.dispose();
+  finePuffMap?.dispose();
   flashMap = null;
   ballMap = null;
   puffMap = null;
+  finePuffMap = null;
 }
 
 export interface MuzzleFlashOptions {
@@ -259,6 +268,19 @@ export interface PowderCloudOptions {
   /** How many puffs make up the bank. */
   count: number;
   life?: number;
+  /**
+   * Overrides the faction tint. A rifled bore burns a small, tight-patched
+   * charge almost completely, so its bank is a pale ash grey rather than the
+   * soot of a smoothbore volley.
+   */
+  tint?: number;
+  /** How thick the bank reads. 1 = a musket; below that you see through it. */
+  density?: number;
+  /**
+   * Fine-grain powder: swaps in the paler, threadier map, keeps the bank tight
+   * to the barrel line, lifts it faster and tears it apart sooner.
+   */
+  fine?: boolean;
 }
 
 /**
@@ -274,6 +296,9 @@ export async function spawnPowderCloud(
   options: PowderCloudOptions,
 ): Promise<void> {
   const life = options.life ?? 1.5;
+  const fine = options.fine === true;
+  const tint = options.tint ?? options.look.smoke;
+  const density = options.density ?? 1;
   const group = new THREE.Group();
   group.name = "powder_cloud";
   group.position.copy(at);
@@ -283,15 +308,15 @@ export async function spawnPowderCloud(
   const side = new THREE.Vector3(0, 1, 0).cross(options.direction).normalize();
   for (let i = 0; i < options.count; i += 1) {
     const material = new THREE.SpriteMaterial({
-      map: sharedPuffMap(),
-      color: options.look.smoke,
+      map: fine ? sharedFinePuffMap() : sharedPuffMap(),
+      color: tint,
       transparent: true,
       depthWrite: false,
       opacity: 0,
       rotation: Math.random() * Math.PI * 2,
     });
     const sprite = new THREE.Sprite(material);
-    const scale = options.size * (0.55 + Math.random() * 0.6);
+    const scale = options.size * (fine ? 0.4 + Math.random() * 0.42 : 0.55 + Math.random() * 0.6);
     sprite.scale.setScalar(scale * 0.4);
     sprite.renderOrder = 5;
     sprite.frustumCulled = false;
@@ -301,11 +326,12 @@ export async function spawnPowderCloud(
       // Blown forward down the line of fire, with a little spread either side.
       drift: options.direction
         .clone()
-        .multiplyScalar(options.size * (0.5 + Math.random() * 0.9))
-        .addScaledVector(side, (Math.random() - 0.5) * options.size * 0.9)
-        .setY(options.size * (0.14 + Math.random() * 0.3)),
+        .multiplyScalar(options.size * (fine ? 0.34 + Math.random() * 0.6 : 0.5 + Math.random() * 0.9))
+        .addScaledVector(side, (Math.random() - 0.5) * options.size * (fine ? 0.5 : 0.9))
+        // Thin smoke has nothing to hang on: it lifts instead of sitting there.
+        .setY(options.size * (fine ? 0.3 + Math.random() * 0.44 : 0.14 + Math.random() * 0.3)),
       scale,
-      spin: (Math.random() - 0.5) * 0.9,
+      spin: (Math.random() - 0.5) * (fine ? 1.4 : 0.9),
     });
   }
 
@@ -315,13 +341,17 @@ export async function spawnPowderCloud(
       easing: (t: number) => t,
       onUpdate: (t: number) => {
         // Fast bloom, long dirty fade — powder smoke outlives the flash by far.
-        const bloom = Math.min(1, t / 0.12);
-        const fade = Math.pow(1 - t, 1.5);
+        // Fine powder thins out on a steeper curve: it is gone while a musket's
+        // bank is still lying across the board.
+        const bloom = Math.min(1, t / (fine ? 0.08 : 0.12));
+        const fade = Math.pow(1 - t, fine ? 2.3 : 1.5);
+        const peak = (fine ? 0.3 : 0.5) * density;
+        const growth = fine ? 2.1 : 1.5;
         for (const puff of puffs) {
           const material = puff.sprite.material as THREE.SpriteMaterial;
-          material.opacity = 0.5 * bloom * fade;
+          material.opacity = peak * bloom * fade;
           material.rotation += puff.spin * 0.016;
-          puff.sprite.scale.setScalar(puff.scale * (0.4 + t * 1.5));
+          puff.sprite.scale.setScalar(puff.scale * (0.4 + t * growth));
           puff.sprite.position.copy(puff.drift).multiplyScalar(t);
         }
       },

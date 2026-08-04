@@ -249,6 +249,13 @@ to face each other, fire gathers at the staff crystal through the strike clip's 
 flies to the target's chest and breaks open — and the victim **dies and is cleared away before the
 caster takes a single step** onto the square.
 
+The Grande Armée's ranks fight the same distance with powder instead (`playGunCinematic()`), and
+`GUNS[kind]` carries the character of the *smoke* as well as the bore. The marksman's rifled
+barrel fires a small, tight-patched charge that burns almost completely, so its bank is built from
+`fineSmokeTexture()` — a pale, threadier bloom — tinted a fixed ash grey (`0xdfe4ea`) instead of
+the faction livery, at 0.62 density, and it lifts, tears apart and clears in two-thirds the time
+of a musket's soot. Every other barrel keeps the dirty livery-tinted bank.
+
 The fire's light comes from `SpellLightPool` (`src/scene/spells.ts`): three point lights created
 once with the scene and lent out per bolt. A light per fireball crashed the tab — three.js keys
 its shader programs on the scene's light counts, so the whole hall recompiled mid-fight. Pooled

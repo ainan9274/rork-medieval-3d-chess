@@ -618,6 +618,46 @@ export function smokeTexture(): THREE.CanvasTexture {
 }
 
 /**
+ * Fine-grain powder smoke: what leaves a *rifled* barrel rather than a musket.
+ *
+ * A rifle's charge is small, tight-patched and burns almost completely, so the
+ * bank it leaves is pale ash-grey and thin enough to see the hall through —
+ * where {@link smokeTexture} is the dirty, soot-heavy bloom of a smoothbore
+ * volley. Kept high-key and low-alpha on purpose: the tint is multiplied by the
+ * sprite colour, so the texture must not carry the darkness itself.
+ */
+export function fineSmokeTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const { canvas, ctx } = createCanvas(size);
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(238,241,244,0.34)");
+  gradient.addColorStop(0.38, "rgba(214,219,224,0.15)");
+  gradient.addColorStop(0.72, "rgba(190,196,203,0.05)");
+  gradient.addColorStop(1, "rgba(180,186,193,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  // Wispier and more of them than the musket blob: a rifle's smoke tears apart
+  // into threads instead of rolling as one lump.
+  for (let i = 0; i < 7; i += 1) {
+    const x = size * (0.26 + Math.random() * 0.48);
+    const y = size * (0.26 + Math.random() * 0.48);
+    const r = size * (0.08 + Math.random() * 0.13);
+    const lobe = ctx.createRadialGradient(x, y, 0, x, y, r);
+    lobe.addColorStop(0, "rgba(246,248,250,0.13)");
+    lobe.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = lobe;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
  * A blade arc: a thin crescent of light, hot on its leading edge and trailing
  * off to nothing, drawn once and swept through a body on a heavy strike.
  */

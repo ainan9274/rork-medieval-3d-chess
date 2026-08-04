@@ -468,8 +468,8 @@ closes with the sabre. The beat is:
    and the shot leaves on its hit frame. Because the muzzle marker is read out of the live pose,
    the kneeling shot leaves the barrel at the height the knee put it, not at standing height.
 3. `spawnMuzzleFlash()` puts a star of burning powder on the barrel mouth (one frame or three),
-   `spawnPowderCloud()` leaves a bank of dirty smoke hanging in front of the gun, and
-   `audio.gunshot()` fires the report.
+   `spawnPowderCloud()` leaves a bank of smoke hanging in front of the gun — soot for a
+   smoothbore, pale ash grey for the rifle (see below) — and `audio.gunshot()` fires the report.
 4. `flyShot()` sends the ball **dead straight and fast** — no arc, no easing; the flatness is
    what separates a gun from a lobbed spell — trailing wisps of smoke as it goes.
 5. The hit lands: flash, sparks, tile strike, camera kick, and for the field gun a wave rolling
@@ -480,10 +480,22 @@ closes with the sabre. The beat is:
 `GUNS[kind]` holds the bore. The Emperor's flintlock is deliberately the quietest kill on the
 board — a dry crack, a puff of smoke, no spectacle. The marshal's rifle is the longest held
 breath (0.34 s of aim, the deepest lens punch-in) and the flattest, fastest ball, with less flame
-and less smoke than the line's musket: a marksman is one clean crack, not a volley. The musket is
+than the line's musket: a marksman is one clean crack, not a volley. The musket is
 a hard crack over a chest thump and a real bank of white smoke. The field gun is the loudest
 thing in the hall, louder than the crown's judgement: a sub-bass slam with the report coming back
 off the far wall.
+
+**The rifle's smoke is its own.** `GUNS[kind]` carries the character of the powder as well as the
+bore (`smokeTint`, `smokeDensity`, `fineSmoke`), because a rifled barrel firing a small,
+tight-patched charge burns it almost completely. The marksman's bank uses `fineSmokeTexture()`
+instead of the musket's soot blob — a high-key, low-alpha, threadier bloom — tinted a fixed pale
+ash grey (`0xdfe4ea`) rather than the faction livery, at **0.62 density**: sheer enough to keep
+seeing the target through it. It also behaves differently: the puffs stay tighter to the barrel
+line, **lift** instead of hanging, spin faster, expand harder (`growth 2.1`) and thin out on a
+steeper curve over two-thirds the life — gone while a musket's bank is still lying across the
+board. The wisps the ball trails on its way over carry the same pale tint, shorter life and more
+rise. Every other barrel keeps the dirty livery-tinted soot (the field gun at 1.15 density, the
+Emperor's flintlock at 0.85 — a puff, no spectacle).
 
 The piece is not nudged by its own charge, it is **thrown** (`gunRecoil()` →
 `PieceView.setTrainRecoil(back, lift)`): the wheels leave the stone and the muzzle jumps in under

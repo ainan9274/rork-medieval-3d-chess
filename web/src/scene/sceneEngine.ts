@@ -424,6 +424,16 @@ interface GunProfile {
   speed: number;
   /** Puffs in the bank of smoke left hanging in front of the barrel. */
   smoke: number;
+  /**
+   * Colour of the powder smoke, or null to take the faction's livery tint. A
+   * rifled barrel fires a small, tight-patched charge that burns almost
+   * completely, so its smoke is pale ash grey where a smoothbore's is soot.
+   */
+  smokeTint: number | null;
+  /** How thick the bank reads. 1 = a musket volley; below that it is sheer. */
+  smokeDensity: number;
+  /** Fine-grain powder: paler, threadier puffs that lift and tear apart fast. */
+  fineSmoke: boolean;
   /** Scales the hit at the far end: flash, sparks, tile strike and shake. */
   blast: number;
   /** How far the body is thrown back by the shot, in tiles. */
@@ -455,6 +465,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.06,
     speed: 0.028,
     smoke: 4,
+    smokeTint: null,
+    smokeDensity: 0.85,
+    fineSmoke: false,
     blast: 1.1,
     kick: 0.05,
     recoil: 0,
@@ -471,6 +484,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.075,
     speed: 0.03,
     smoke: 6,
+    smokeTint: null,
+    smokeDensity: 1,
+    fineSmoke: false,
     blast: 1,
     kick: 0.07,
     recoil: 0,
@@ -487,6 +503,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.15,
     speed: 0.024,
     smoke: 11,
+    smokeTint: null,
+    smokeDensity: 1.15,
+    fineSmoke: false,
     blast: 2.1,
     kick: 0.04,
     recoil: 0.19,
@@ -496,7 +515,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
   },
   // Rifled long arm, fired from one knee: the longest held breath on the board
   // and the flattest, fastest ball. Less flame and less smoke than the line's
-  // musket — a marksman is a single clean crack, not a volley.
+  // musket — a marksman is a single clean crack, not a volley. Its charge is
+  // small and tightly patched, so it burns clean: the bank off this barrel is
+  // pale ash grey, sheer enough to see the target through, and gone in a beat.
   b: {
     zoom: 8.5,
     aim: 0.34,
@@ -504,7 +525,10 @@ const GUNS: Record<PieceKind, GunProfile> = {
     flash: 0.5,
     ball: 0.068,
     speed: 0.021,
-    smoke: 5,
+    smoke: 6,
+    smokeTint: 0xdfe4ea,
+    smokeDensity: 0.62,
+    fineSmoke: true,
     blast: 1.2,
     kick: 0.06,
     recoil: 0,
@@ -521,6 +545,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.07,
     speed: 0.03,
     smoke: 5,
+    smokeTint: null,
+    smokeDensity: 1,
+    fineSmoke: false,
     blast: 1,
     kick: 0.06,
     recoil: 0,
@@ -536,6 +563,9 @@ const GUNS: Record<PieceKind, GunProfile> = {
     ball: 0.07,
     speed: 0.03,
     smoke: 5,
+    smokeTint: null,
+    smokeDensity: 1,
+    fineSmoke: false,
     blast: 1,
     kick: 0.06,
     recoil: 0,
@@ -1957,12 +1987,18 @@ export class SceneEngine {
       life: 0.09 + gun.calibre * 0.06,
       light: settings.postFx ? this.spellLights.acquire(look.light, 4.4) : null,
     });
+    // A smoothbore leaves soot in the faction's livery tint; the marksman's
+    // rifled barrel leaves pale ash grey you can see the hall through.
+    const powder = gun.smokeTint ?? look.smoke;
     void spawnPowderCloud(this.scene, this.tweens, muzzle, {
       look,
       size: 0.34 + gun.calibre * 0.7,
       direction: aim,
       count: Math.max(3, Math.round(gun.smoke * (settings.captureParticles >= 34 ? 1 : 0.5))),
-      life: 1.2 + gun.calibre * 1.1,
+      life: (1.2 + gun.calibre * 1.1) * (gun.fineSmoke ? 0.66 : 1),
+      tint: powder,
+      density: gun.smokeDensity,
+      fine: gun.fineSmoke,
     });
     // Sparks and burning grains thrown out of the pan and the bore.
     this.effects.spawnBurst(muzzle, look.ball, Math.round(settings.captureParticles * 0.3 * (0.5 + gun.calibre)), {
@@ -1992,12 +2028,12 @@ export class SceneEngine {
         this.effects.spawnSmoke(at.clone(), {
           count: 1,
           radius: 0.06,
-          scale: 0.2 + gun.calibre * 0.22,
+          scale: (0.2 + gun.calibre * 0.22) * (gun.fineSmoke ? 0.75 : 1),
           growth: 2.4,
-          life: 0.5,
+          life: gun.fineSmoke ? 0.34 : 0.5,
           speed: 0.2,
-          rise: 0.16,
-          color: look.smoke,
+          rise: gun.fineSmoke ? 0.3 : 0.16,
+          color: powder,
           opacity: 0.2,
         });
       },
