@@ -64,6 +64,13 @@ cd web && bun install && bun run dev
   sparks fly, the screen shakes, and the defender **burns away from the soles upward**
   through a ragged edge of light, shedding motes that drift off (cold soul-light for the
   Kingdom, live embers for the Empire).
+- **The square changes hands** — the moment a victor's boot comes down on the tile it has just
+  cleared, its own colours **close inward** over the square (every other ring on this board
+  travels outward, so the reversed motion is unmistakable), the army's mark seals under it,
+  chips of the old occupant's stone are thrown up, and the figure draws itself up to full
+  height. Over the top of it, a short brass motif rises a perfect fifth — the one sound in the
+  game that means *conquest* rather than violence. All of it is keyed to **what was taken**, so
+  trading a footsoldier never sounds like felling a queen.
 - **A blow that scales with rank** — the footsoldier stabs and moves on; the rider cuts on the
   charge and leaves an arc of steel hanging in the air; the tower guardian's hammer sends a
   wave rolling across the stone and the hall keeps shaking afterwards; the crown drops a
@@ -498,11 +505,41 @@ exactly as it was; everything above it is measured against it:
 | King (`k`) | A column of light dropped on the condemned before the blow (`spawnPillar` + `judgementToll`), 11° lens punch, gold arc **and** gold ground wave, the longest hitstop and aftershock |
 
 The supporting visuals live in `src/scene/strikes.ts` (`spawnSlash`, `spawnGroundWave`,
-`spawnPillar`). Each one builds a throwaway object, animates it off the caller's tween clock and
-disposes itself, so none of them needs a slot in the frame loop; the textures and geometry are
-shared module singletons freed by `disposeStrikeAssets()`. The swing, the slam and the bell
-(`bladeWhoosh`, `groundSlam`, `judgementToll`) are synthesised in the mixer alongside the
-footsteps — no assets.
+`spawnPillar`, `spawnConquestClaim`). Each one builds a throwaway object, animates it off the
+caller's tween clock and disposes itself, so none of them needs a slot in the frame loop; the
+textures and geometry are shared module singletons freed by `disposeStrikeAssets()`. The swing,
+the slam, the bell and the claim (`bladeWhoosh`, `groundSlam`, `judgementToll`, `conquest`) are
+synthesised in the mixer alongside the footsteps — no assets.
+
+### Taking the square
+
+All three battle beats — melee, spell and gunpowder — end the same way: the body is cleared and
+the victor marches onto the square. That arrival used to be punctuated by the same generic
+set-down clack a quiet move gets, and a *softer* landing than usual on top of it, so the moment
+that actually wins a game of chess was the quietest thing in the fight. `claimSquare()` in
+`src/scene/sceneEngine.ts` gives it its own beat, fired once from `runMove()` after `landOn()` —
+which means it covers every path, including captures made with the cinematics switched off and
+ones made on the flat tactical map:
+
+1. **`audio.conquest()`** — a boot claiming the stone (dry grit over a low stamp), then a brass
+   motif rising a perfect fifth, then two high inharmonic partials left ringing. Each note is
+   scooped into from under pitch through a filter that opens on the attack, which is what makes
+   it read as brass rather than as a sawtooth. Its root is G3, the same fundamental the
+   judgement bell is struck on, so the two read as one hall speaking. Fully synthesised, so the
+   full stop lands on the exact frame even on a cold cache.
+2. **`spawnConquestClaim()`** — a wide loop of the victor's colour drawn **tight** around the
+   tile, brightening as it converges, snapping shut into the army's own sunburst mark and
+   letting go. Two throwaway discs; cheap enough for every preset.
+3. **The figure draws up** — `drawUp()` leans the shoulders back off the blow and springs them
+   level again on `outElastic`, driven off the runtime node rather than a clip so a rig without
+   animations gets it too. A lean, not a pose: it finishes inside the pause before the reply,
+   because a victory dance would read as the board hanging.
+
+Everything scales off `CONQUEST_WEIGHT[victim.kind]` — the one weight on the board that belongs
+to the **victim**. A heavier capture drops the motif's root by up to half an octave, lengthens
+its tail, adds an octave as a third note, holds the ring closed longer and throws more chips. So
+a queen going down is audibly a different event from a pawn trade, without either one getting
+its own choreography.
 
 ### Ranged combat (queen and mage)
 
@@ -1086,7 +1123,8 @@ marshal is hit on the knee he fires from, the cuirassier's bellow is boxed in by
 artillery guard's groan sags with his weight, and the line infantryman's cry is young, thin and
 snapped short.
 
-Footsteps, the wooden set-down knock, body falls and UI blips are synthesised with oscillators
+Footsteps, the wooden set-down knock, the claim motif fired when a square changes hands
+(`conquest()`), body falls and UI blips are synthesised with oscillators
 and noise buffers — no files. Everything routes through one master gain
 for the mute toggle, and playback only starts after the first user gesture (browser autoplay
 policy).
