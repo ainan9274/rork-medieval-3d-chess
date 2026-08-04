@@ -498,16 +498,30 @@ method — no assets, so a volley never waits on a download.
 bishop capture the engine raises a sight picture over the whole interface (`SceneCallbacks.onScope`
 → `src/ui/ScopeOverlay.tsx`, `.mc-scope` in `medieval.css`): the hall goes dark around a narrow
 tube on the target, a brass bezel and a two-wire reticle with range ticks settle over it, the
-shooter's held breath drifts under the crosshair, the report throws the whole picture up off the
-mark and walks it back down, and the frame opens out again on the frame the body drops — in step
+shooter's held breath drifts under the crosshair, **his hands wander off the mark by an amount
+rolled for that shot**, the report throws the whole picture up off the mark and walks it back down,
+and the frame opens out again on the frame the body drops — in step
 with the lens pulling back out of its 8.5° punch-in. The reticle **tracks the body**: the overlay
 asks `SceneEngine.scopeTarget()` once a frame and writes the result into two custom properties on
 the DOM, so it stays on the target while the camera is still moving without re-rendering React or
 touching the animation loop. Everything animates on `transform` and `opacity` only — no filters,
 no backdrop blur — so a software rasteriser is never asked to composite a full-screen effect
-mid-fight, and `prefers-reduced-motion` keeps the tube but drops the breath and the recoil. The
-sight picture is skipped on the flat tactical map, and `closeScope()` runs from the battle beat's
-error path too, so a broken effect can never leave the frame shut.
+mid-fight, and `prefers-reduced-motion` keeps the tube but drops the breath, the tremor and the
+recoil. The sight picture is skipped on the flat tactical map, and `closeScope()` runs from the
+battle beat's error path too, so a broken effect can never leave the frame shut.
+
+**Hand tremor is a rolled variable, not a canned wobble.** `handTremor()` scores each shot 0..1
+from the range being asked of the man — a body 1–2 squares off is held almost dead still, one at
+the far corner of the hall floats badly — plus up to `0.22` of luck, so the same shot is never
+unsteady in the same way twice. That figure rides in `ScopeState.tremor` and the overlay spends it
+on three things: the reticle's wander (three incommensurable sines per axis, up to 2.6 vmin of
+drift and 0.9° of cant, so nothing repeats inside a held breath), the **width of the breath
+animation** itself (`--scope-breath`, so a long shot visibly heaves more than a point-blank one),
+and the pacing — the hands arrive unsettled (×1.35), steady onto the mark over 340 ms, then drift
+worse and worse as the breath runs out (`(t / hold) ^ 1.7`), and stand fully down over 300 ms once
+the shot goes, because from there the recoil owns the picture. Like the tracking, it is written as
+custom properties onto one DOM node inside the same `requestAnimationFrame` loop — zero React
+re-renders and zero extra work for the animation loop.
 
 The shot leaves the gun itself: `muzzle` markers in `src/scene/weapons.ts` are parented at each
 barrel mouth (pistol, musket, gun bore) and read out of the live pose each frame, exactly like a

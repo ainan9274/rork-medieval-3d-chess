@@ -1338,7 +1338,17 @@
   animation: mc-scope-open 400ms cubic-bezier(0.36, 0, 0.66, -0.2) both;
 }
 
-/* The shooter's held breath: a slow figure-of-eight drift under the reticle. */
+/* The shooter's hands. Written from JS every frame: a wander whose width is
+   rolled per shot from the range being asked of him, growing as the breath runs
+   out and standing down the moment the recoil takes over. */
+.mc-scope-hand {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(var(--scope-hand-x, 0), var(--scope-hand-y, 0), 0) rotate(var(--scope-hand-roll, 0deg));
+}
+
+/* The shooter's held breath: a slow figure-of-eight drift under the reticle,
+   widened by `--scope-breath` when the hands are having a hard time of it. */
 .mc-scope-sway {
   position: absolute;
   inset: 0;
@@ -1527,16 +1537,16 @@
 @keyframes mc-scope-breathe {
   0%,
   100% {
-    transform: translate3d(-0.5vmin, 0.35vmin, 0);
+    transform: translate3d(calc(var(--scope-breath, 1) * -0.5vmin), calc(var(--scope-breath, 1) * 0.35vmin), 0);
   }
   27% {
-    transform: translate3d(0.45vmin, -0.3vmin, 0);
+    transform: translate3d(calc(var(--scope-breath, 1) * 0.45vmin), calc(var(--scope-breath, 1) * -0.3vmin), 0);
   }
   53% {
-    transform: translate3d(0.2vmin, 0.5vmin, 0);
+    transform: translate3d(calc(var(--scope-breath, 1) * 0.2vmin), calc(var(--scope-breath, 1) * 0.5vmin), 0);
   }
   78% {
-    transform: translate3d(-0.35vmin, -0.45vmin, 0);
+    transform: translate3d(calc(var(--scope-breath, 1) * -0.35vmin), calc(var(--scope-breath, 1) * -0.45vmin), 0);
   }
 }
 
@@ -1557,6 +1567,10 @@
 @media (prefers-reduced-motion: reduce) {
   .mc-scope-sway {
     animation: none;
+  }
+
+  .mc-scope-hand {
+    transform: none;
   }
 
   .mc-scope-eye,

@@ -51,6 +51,15 @@ export interface ScopeState {
   phase: "aim" | "fire";
   /** Seconds the sight picture is held before the shot, so the UI can pace itself. */
   hold: number;
+  /**
+   * How badly the hands wander on this particular shot, 0..1.
+   *
+   * Rolled per shot from the range being asked of the man — a body two squares
+   * away is held rock steady, one across the whole hall visibly floats — plus a
+   * little luck, so the same shot is never unsteady in the same way twice. The
+   * overlay reads it as the amplitude of the reticle's drift.
+   */
+  tremor: number;
 }
 
 /** Where a sighted body sits on screen, as 0..1 across the canvas. */
@@ -108,6 +117,20 @@ const BOARD_FOCUS = new THREE.Vector3(0, 0.45, 0);
 
 /** Scratch vector for projecting the sighted body; never held between calls. */
 const SCOPE_PROBE = new THREE.Vector3();
+
+/**
+ * How unsteady the marksman's hands are on a given shot, 0..1.
+ *
+ * Range is what decides it: a body two squares off is held almost dead still,
+ * one at the far corner of the hall floats badly under the reticle. A small
+ * roll on top means the same shot is never unsteady in the same way twice, so
+ * the sight picture never looks like a looping animation.
+ */
+function handTremor(shooter: THREE.Vector3, target: THREE.Vector3): number {
+  const squares = shooter.distanceTo(target) / TILE;
+  const reach = Math.min(1, Math.max(0, (squares - 1.2) / 6.2));
+  return Math.min(1, 0.18 + reach * 0.62 + Math.random() * 0.22);
+}
 
 /**
  * The flat tactical map: high above the board, dead centre and shot through a
@@ -618,6 +641,8 @@ export class SceneEngine {
   private scopeVictim: PieceView | null = null;
   /** True between the sights coming up and the eye coming off them. */
   private scopeLive = false;
+  /** Unsteadiness rolled for the shot in progress, so `fire` reports the same figure. */
+  private scopeTremor = 0;
 
   private lastFrameTime = 0;
   private elapsed = 0;
@@ -1870,7 +1895,7 @@ export class SceneEngine {
     // Only the rifle carries sights, so only the rifle earns the sight picture:
     // the frame closes down onto the body for as long as the breath is held.
     const sighted = attacker.kind === "b";
-    if (sighted) this.openScope(victim, 0.32 + gun.aim);
+    if (sighted) this.openScope(victim, 0.32 + gun.aim, handTremor(from, victimSpot));
     void this.tweens.to({
       duration: 0.26,
       easing: Ease.outCubic,
@@ -2791,16 +2816,17 @@ export class SceneEngine {
   // ------------------------------------------------------------ the sight picture
 
   /** The sights come up on a body: the UI closes the frame down onto it. */
-  private openScope(victim: PieceView, hold: number): void {
+  private openScope(victim: PieceView, hold: number, tremor: number): void {
     this.scopeVictim = victim;
     this.scopeLive = true;
-    this.callbacks.onScope?.({ phase: "aim", hold });
+    this.scopeTremor = tremor;
+    this.callbacks.onScope?.({ phase: "aim", hold, tremor });
   }
 
   /** The frame the shot leaves the barrel. */
   private fireScope(): void {
     if (!this.scopeLive) return;
-    this.callbacks.onScope?.({ phase: "fire", hold: 0 });
+    this.callbacks.onScope?.({ phase: "fire", hold: 0, tremor: this.scopeTremor });
   }
 
   /**

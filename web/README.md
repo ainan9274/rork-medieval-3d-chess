@@ -63,6 +63,13 @@ opening out again as the body drops. The reticle follows the target by polling
 onto the DOM — no React re-render per frame — and it animates on `transform` / `opacity` only, so
 software rasterisers are never asked to composite a full-screen filter mid-fight.
 
+**Hand tremor** rides along in the same loop. The engine rolls `ScopeState.tremor` (0..1) per shot
+from the range being asked of the marksman plus a little luck, and the overlay spends it on a
+sine-sum wander of the whole sight picture (up to 2.6 vmin and 0.9° of cant), on the width of the
+breath animation (`--scope-breath`), and on the pacing: unsettled on arrival, steady for a moment,
+then worse as the breath runs out, standing down when the shot goes. `prefers-reduced-motion`
+disables it outright.
+
 ## Architecture
 
 Rendering is fully decoupled from the rules: the chess core emits events and the scene
