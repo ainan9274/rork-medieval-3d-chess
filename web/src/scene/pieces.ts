@@ -74,19 +74,32 @@ const FACTION_RIM: Record<Faction, number> = {
 };
 
 /**
- * Resting opacity of the tile band. High enough to be read at a glance from a
+ * Resting opacity of the tile band. Enough to be read at a glance from a
  * standing camera without lighting the square like a marker — selection and the
  * check alarm still have room above it (see {@link PieceView.update}).
+ *
+ * Deliberately below half: the band sits *under* the figure, so every point of
+ * opacity it gains also spills team colour up onto the boots and the hem. The
+ * shape of the band (see {@link factionRingTexture}) carries the signal; the
+ * brightness only has to make that shape visible.
  */
-const RING_REST = 0.5;
+const RING_REST = 0.3;
 
 /**
- * How hard the rim light rides the silhouette. Tuned against the darkest map: a
- * value this side of 1 states the army on the figure's edge without turning a
- * uniform into a neon outline — the sculpt's own paint still has to be the thing
- * you look at.
+ * How hard the rim light rides the silhouette, and how tightly it hugs the edge
+ * (the fresnel exponent, see {@link installDissolve}).
+ *
+ * These two numbers trade off, and the tight-and-faint end is the right one: a
+ * broad, strong rim does not outline a uniform, it *repaints* it — the term is
+ * added to the shaded colour, so at a low exponent it reaches well inside the
+ * silhouette and drowns braid, facings and musket furniture in one flat hue. A
+ * high exponent confines it to the grazing few degrees at the contour, which is
+ * the only part that has to separate a figure from the piece behind it, and lets
+ * the strength drop to a whisper while still reading. The sculpt's own paint
+ * stays the thing you look at.
  */
-const RIM_STRENGTH = 0.62;
+const RIM_STRENGTH = 0.26;
+const RIM_FALLOFF = 4.6;
 
 /** Light that burns along the dissolving edge — one hue per civilisation. */
 const DISSOLVE_EMBER: Record<Faction, number> = {
@@ -202,7 +215,7 @@ if (uDissolve > 0.001) {
       .replace(
         "#include <opaque_fragment>",
         `float rimFacing = 1.0 - clamp(dot(normalize(normal), normalize(vRimView)), 0.0, 1.0);
-float rimAmount = pow(rimFacing, 2.7) * uRimStrength * (1.0 - uDissolve);
+float rimAmount = pow(rimFacing, ${RIM_FALLOFF.toFixed(1)}) * uRimStrength * (1.0 - uDissolve);
 #include <opaque_fragment>
 gl_FragColor.rgb += uRimColor * rimAmount;
 gl_FragColor.rgb += uDissolveEmber * dvGlow * 3.2;`,

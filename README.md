@@ -231,6 +231,14 @@ board. The rim is a fresnel edge injected beside the dissolve shader and added b
 mapping, so it is graded with the frame instead of sitting on top of it — and it is on the
 weapons too, because a levelled musket is part of the silhouette.
 
+Because the answer is given three times, **each telling can be quiet** — and has to be. Turned up
+together the marks swamped the very figures they were labelling: the edge light spread off the
+contour and across the uniforms, and the glow under each figure bounced colour up its legs, so a
+hall of hand-painted sculpts read as blue and orange shapes. The edge light is now held to the
+grazing sliver at the outline and the floor glow to a breath under the boots, while the crest
+overhead — the one mark that covers no part of the model — stays bright. Colour tells you the
+side; the sculpt is still what you look at.
+
 That sharing is why army loads are **serialised**, and why asking for armies that are already
 standing does nothing at all. The app remembers your armies between visits and hands them to the
 board *before* the first download starts, so any non-default choice used to begin a swap and the

@@ -235,9 +235,27 @@ therefore stated in **three** independent channels, tuned so no single one has t
 | Rank crest | azure field, gothic heater shield | ember field, stepped sun disc | The plates used to be near-black on both sides with only their bezel metal differing: at badge size that is two dark lozenges |
 
 The band is **painted, not added** (`NormalBlending`, `toneMapped: false`, resting opacity
-`RING_REST` = 0.5). The old additive glow at 0.16 vanished into a lit marble square, which is
+`RING_REST` = 0.3). The old additive glow at 0.16 vanished into a lit marble square, which is
 most of the board. Selection, hover, the check alarm and the landing flare still push above the
 resting level, clamped at 1.
+
+**Three channels means each one runs quiet.** The first pass at this ran all three loud at once
+and the board went blue and orange: the mark stopped identifying the figures and started hiding
+them. Both offenders were painting the *sculpt*, not the space around it:
+
+- **The rim reached inside the silhouette.** It is added to the shaded colour, so its fresnel
+  exponent decides how far in it travels. At `2.7` the term was still strong a long way from the
+  contour — enough to flatten braid, facings and musket furniture into one hue. `RIM_FALLOFF` is
+  now `4.6`, confining it to the grazing few degrees that actually do the separating, which let
+  `RIM_STRENGTH` drop `0.62 → 0.26` and still read against the darkest map.
+- **The band's floor wash bounced up the legs.** The widest, brightest part of the mark sat
+  directly beneath the figure (`0.34` alpha out to `0.46` of the tile). Now `0.12` out to `0.4`,
+  with the bleed halo behind the crisp line narrowed (`0.11 → 0.07` wide, `0.24 → 0.14` alpha) so
+  the bloom pass has less to grab. The *shape* of the band was always the signal; brightness only
+  has to make the shape visible.
+
+The crests were left alone. A sprite above the crown covers no part of the model, so it is the one
+channel that can afford to be loud — which is why the other two can afford not to be.
 
 **One army wearing both sides is loaded once.** Only the `native` faction's six rosters are
 downloaded; the other side renders the *same* `Template` objects, sharing one `scene` and — the

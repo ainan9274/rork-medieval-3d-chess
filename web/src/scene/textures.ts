@@ -193,12 +193,15 @@ export function factionRingTexture(shape: "band" | "sunburst"): THREE.CanvasText
   const { canvas, ctx } = createCanvas(size);
   const c = size / 2;
 
-  // Floor wash: the tile itself takes a little of the army's colour, so a figure
-  // standing on ivory marble is not read against the same neutral ground as one
-  // standing on basalt.
-  const wash = ctx.createRadialGradient(c, c, size * 0.06, c, c, size * 0.46);
-  wash.addColorStop(0, "rgba(255,255,255,0.34)");
-  wash.addColorStop(0.6, "rgba(255,255,255,0.14)");
+  // Floor wash: the tile takes a *breath* of the army's colour, no more. This is
+  // the one part of the mark that sits directly beneath the figure, so anything
+  // brighter bounces up the legs and hem and starts recolouring the sculpt — and
+  // it is the widest part too, so it is what fills the frame when thirty-two of
+  // them are on screen. Kept faint and pulled in tight (0.46 → 0.4 of the tile):
+  // enough to lift a figure off ivory marble, not enough to paint the square.
+  const wash = ctx.createRadialGradient(c, c, size * 0.06, c, c, size * 0.4);
+  wash.addColorStop(0, "rgba(255,255,255,0.12)");
+  wash.addColorStop(0.6, "rgba(255,255,255,0.05)");
   wash.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = wash;
   ctx.fillRect(0, 0, size, size);
@@ -206,30 +209,35 @@ export function factionRingTexture(shape: "band" | "sunburst"): THREE.CanvasText
   const radius = size * 0.375;
 
   // Bleed first, hard edge second — the band keeps a crisp line even under bloom.
-  ctx.strokeStyle = "rgba(255,255,255,0.24)";
-  ctx.lineWidth = size * 0.11;
+  // The bleed is the halo the bloom pass grabs hold of, so it is narrow and faint;
+  // the crisp line under it does the reading, and a *thin* bright line is easier
+  // to read than a thick soft one.
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.lineWidth = size * 0.07;
   ctx.beginPath();
   ctx.arc(c, c, radius, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.strokeStyle = "rgba(255,255,255,0.96)";
-  ctx.lineWidth = size * 0.045;
+  ctx.lineWidth = size * 0.032;
   ctx.beginPath();
   ctx.arc(c, c, radius, 0, Math.PI * 2);
   ctx.stroke();
 
   if (shape === "band") {
     // Second, thinner band inside it: two concentric lines, no teeth.
-    ctx.strokeStyle = "rgba(255,255,255,0.8)";
-    ctx.lineWidth = size * 0.016;
+    ctx.strokeStyle = "rgba(255,255,255,0.72)";
+    ctx.lineWidth = size * 0.014;
     ctx.beginPath();
     ctx.arc(c, c, size * 0.285, 0, Math.PI * 2);
     ctx.stroke();
   } else {
-    // Spiked collar: twelve tapered rays outside the band.
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    // Spiked collar: twelve tapered rays outside the band. Shorter than the
+    // kingdoms' bleed is wide, so the two shapes stay different at a glance
+    // without the empire's mark covering more of its tile.
+    ctx.fillStyle = "rgba(255,255,255,0.86)";
     const inner = size * 0.4;
-    const outer = size * 0.487;
+    const outer = size * 0.472;
     for (let i = 0; i < 12; i += 1) {
       const angle = (i / 12) * Math.PI * 2;
       const spread = 0.055;
