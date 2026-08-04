@@ -46,7 +46,7 @@ const STILL_MODELS: Record<ArmySkinId, Roster<string>> = {
     r: `${MODEL_BASE}/c044d8e8-28fd-4aa9-af00-d58ca49fedee.glb`,
     p: `${MODEL_BASE}/2cd10f02-711f-4e51-8b32-1d6603e7cc3f.glb`,
   },
-  // Grande Armée: Napoléon, an imperial commander, marshals of the Empire,
+  // Grande Armée: Napoléon, an imperial commander with the Marengo sword,
   // cuirassier champions, artillery guards and line infantry.
   empire: {
     k: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8.glb`,
@@ -217,13 +217,21 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
       reload: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-standing-reload.glb`,
     },
-    // The commander fights at range: her cast is the artillery order.
+    // The commander fights at range, but with powder rather than sorcery: the
+    // Marengo sword stays in her left hand and the flintlock does the work.
+    //   * aim     — the pistol comes up and is held on the man across the board
+    //   * strike  — drawn and fired from the shoulder, standing at full height
+    //   * reload  — fresh powder and ball, still on her feet
+    // Alternative on the same rig: `...-anim-charged-spell-cast.glb` (the old
+    // sorceress cast, kept in case the court ever goes back to witchfire).
     q: {
       rigged: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-rigged.glb`,
       idle: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-idle.glb`,
-      attack: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-charged-spell-cast.glb`,
+      aim: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-archery-aim-with-lateral-scan.glb`,
+      attack: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-cowboy-quick-draw-shooting.glb`,
       death: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-dying-backwards.glb`,
       walk: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-casual-walk-inplace.glb`,
+      reload: `${MODEL_BASE}/a152280e-7af7-4e3e-846e-b20e8f8c2952-anim-standing-reload.glb`,
     },
     // The Empire's marksman. He carries no staff and casts nothing: the rifle
     // comes up, he goes down on one knee, and the shot is taken from there.

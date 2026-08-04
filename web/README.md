@@ -173,7 +173,7 @@ under `kg.armies`:
 | --- | --- | --- |
 | `ivory` | Ivory Kingdom — King, Queen, Mage, Knight, Guardian, Footman | `kingdom` |
 | `sun` | Sun Empire — Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | `sun` |
-| `empire` | Grande Armée — Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` |
+| `empire` | Grande Armée — Napoléon, Imperial Commander (flintlock + Marengo sword), Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` |
 
 One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five or six
 clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and death cries.
@@ -193,10 +193,10 @@ its army's `animated` roster (`ARMY_SKINS`, `src/assets/generated.ts`):
 | `idle` | Looping combat stance, desynced per figure so the army does not breathe in lockstep. The Grande Armée's marshal is the exception: he waits out the turn **down on one knee** with the rifle up, the same kneel his shot is fired from |
 | `walk` | Looping in-place stride, retimed to the cadence of the move under way |
 | `run` | Looping in-place run — the knight charging through its leap (knights only) |
-| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire; for the Grande Armée's gunpowder ranks it is the **firing drill** — the marshal's is a drop onto one knee with the rifle levelled — played at its own readable length (`GUNS[kind].drill`), and the hit frame is the shot |
+| `attack` | One-shot strike the moment the attacker lands a capture (sparks, shake and clash sound are timed to the hit frame). For the queen and the mage the same clip is the incantation, and its hit frame releases the fire — except under the `empire` arsenal, where the commander draws and shoots instead; for the Grande Armée's gunpowder ranks it is the **firing drill** — the marshal's is a drop onto one knee with the rifle levelled — played at its own readable length (`GUNS[kind].drill`), and the hit frame is the shot |
 | `death` | One-shot fall played by the captured figure before it dissolves into dust |
-| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée's king, bishop, rook and pawn carry one — the bishop's is a kneeling reload, the rook's is served at the muzzle |
-| `aim` | Looping sight picture held *before* the shot: the weapon comes up and stays on the body while the shooter settles (`PieceView.playAim()`). Napoléon and the line infantry carry one; the marshal's kneel and the battery's gun-laying already are the aim |
+| `reload` | One-shot drill run after a shot (powder, ball, ramrod). Only the Grande Armée carries one — the bishop's is a kneeling reload, the rook's is served at the muzzle, the king's and the commander's are done standing |
+| `aim` | Looping sight picture held *before* the shot: the weapon comes up and stays on the body while the shooter settles (`PieceView.playAim()`). Napoléon, the Imperial Commander and the line infantry carry one; the marshal's kneel and the battery's gun-laying already are the aim |
 
 How it is wired (`src/scene/pieces.ts`):
 

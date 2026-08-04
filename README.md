@@ -183,19 +183,19 @@ a set of death cries.
 | --- | --- | --- | --- |
 | `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
 | `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
-| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, eagle staff of command, rifled long arm with sights and sling, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, a second flintlock over the Marengo sword, rifled long arm with sights and sling, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
 
 The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
 breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
-bicorne and dress sabre, the commander's laurel crown and eagle staff, the marshal's plumed hat
+bicorne and dress sabre, the commander's laurel crown over the Marengo sword, the marshal's plumed hat
 and coat tails over the longest barrel on the board, the cuirassier's horsehair-crested helmet
 over a steel breastplate, the artillery guard's bearskin behind the field gun he hauls, and the
 infantry's musket. **This is the one army that fights with powder** (see [Gunpowder
 combat](#gunpowder-combat-pistol-rifle-musket-and-field-gun)): Napoléon settles matters with the
-flintlock in his fist, the marshal waits out the game on one knee and shoots from it with a rifle, the line
-infantry fires a volley, and the battery lays and serves the gun it drags along. Only the
-cuirassier still closes, sabre first, and only the Imperial Commander still fights with fire —
-she signals the volley from her own square.
+flintlock in his fist, his commander does the same with the Marengo sword still in her left hand,
+the marshal waits out the game on one knee and shoots from it with a rifle, the line infantry
+fires a volley, and the battery lays and serves the gun it drags along. Only the cuirassier still
+closes, sabre first — **nobody in this army casts anything**.
 
 Swapping an army re-downloads its rosters, so the swap waits for any fight on screen to finish,
 takes the old figures down and stands the new ones up (a second or two on a cold cache). Give
@@ -458,9 +458,9 @@ a glowing burn edge, while the whole mesh fades and sheds upward-drifting motes.
 ### Gunpowder combat (pistol, rifle, musket and field gun)
 
 The Grande Armée does not fight with witchfire. `attackStyle(kind, arsenal)` in
-`src/scene/sceneEngine.ts` routes captures by its **king, bishop, rook and pawn** to
-`playGunCinematic()`; only the Imperial Commander keeps the spell beat, and the cuirassier still
-closes with the sabre. The beat is:
+`src/scene/sceneEngine.ts` routes captures by **every rank except the cuirassier** to
+`playGunCinematic()` — the witchfire beat is unreachable under this arsenal, and the cuirassier
+still closes with the sabre. The beat is:
 
 1. Both figures turn to face each other; the shooter never leaves its square. A lock, a ramrod
    or a linstock is heard (`audio.gunLock`) as the barrel comes round.

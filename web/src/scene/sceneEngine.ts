@@ -218,7 +218,8 @@ const GAITS: Record<PieceKind, Gait> = {
  * The two ranks that never touch what they kill: the sorceress queen and the
  * staff-bearing mage. Both open the fight from where they stand, throwing a
  * ball of fire down the line, and only walk onto the square once the body on it
- * has burned away.
+ * has burned away. Under the Grande Armée's arsenal the same two ranks keep the
+ * distance but trade the fire for powder (see {@link attackStyle}).
  */
 const RANGED_KINDS: PieceKind[] = ["q", "b"];
 
@@ -229,15 +230,15 @@ const RANGED_KINDS: PieceKind[] = ["q", "b"];
  * - `spell` — gather fire on the spot and throw it (see {@link SPELLS}).
  * - `gun` — level a barrel and fire (see {@link GUNS}).
  *
- * The Grande Aréme is the one army that fights with powder: its Emperor settles
- * matters with a flintlock, its marshal with a rifle from one knee, its line
- * infantry with a musket volley and its battery with the field gun it hauls.
- * Only the cuirassier still closes, sabre first — which is exactly what a
- * cavalryman is for.
+ * The Grande Aréme is the one army that fights with powder: its Emperor and his
+ * commander settle matters with a flintlock, its marshal with a rifle from one
+ * knee, its line infantry with a musket volley and its battery with the field
+ * gun it hauls. Only the cuirassier still closes, sabre first — which is exactly
+ * what a cavalryman is for. Nobody in this army casts anything.
  */
 type AttackStyle = "melee" | "spell" | "gun";
 
-const GUNPOWDER_KINDS: PieceKind[] = ["k", "b", "r", "p"];
+const GUNPOWDER_KINDS: PieceKind[] = ["k", "q", "b", "r", "p"];
 
 function attackStyle(kind: PieceKind, arsenal: ArsenalId): AttackStyle {
   if (arsenal === "empire" && GUNPOWDER_KINDS.includes(kind)) return "gun";
@@ -464,7 +465,7 @@ interface GunProfile {
 }
 
 /**
- * The four barrels of the Grande Armée, in order of what they are worth.
+ * The barrels of the Grande Armée, in order of what they are worth.
  *
  * The pistol is deliberately the quietest kill on the board — the Emperor does
  * not need spectacle — and the field gun is by far the loudest thing in the
@@ -566,25 +567,28 @@ const GUNS: Record<PieceKind, GunProfile> = {
     hold: 0.08,
     aftershock: 0,
   },
-  // Never reached — the cuirassier charges, and the court fights with fire.
+  // The commander's flintlock: the Emperor's own weapon, held a beat longer.
+  // She takes the shot standing at full height with the Marengo sword still in
+  // her left hand, so the drill is unhurried and the report is a shade fuller
+  // than his — an order being carried out, not a duel being won.
   q: {
-    zoom: 6,
-    aim: 0.16,
-    voice: "musket",
-    drill: { seconds: 1.1, impact: 0.5 },
-    calibre: 0.4,
-    flash: 0.55,
-    ball: 0.07,
-    speed: 0.03,
+    zoom: 7.5,
+    aim: 0.4,
+    voice: "pistol",
+    drill: { seconds: 1.35, impact: 0.54 },
+    calibre: 0.12,
+    flash: 0.48,
+    ball: 0.062,
+    speed: 0.026,
     smoke: 5,
     smokeTint: null,
-    smokeDensity: 1,
+    smokeDensity: 0.9,
     fineSmoke: false,
-    blast: 1,
-    kick: 0.06,
+    blast: 1.25,
+    kick: 0.055,
     recoil: 0,
     wave: null,
-    hold: 0.05,
+    hold: 0.07,
     aftershock: 0,
   },
   n: {

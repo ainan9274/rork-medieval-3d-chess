@@ -56,7 +56,7 @@ type WeaponId =
   | "greatChimalli"
   // Grande Armée
   | "imperialSabre"
-  | "eagleStaff"
+  | "marengoSword"
   | "marksmanRifle"
   | "cavalrySabre"
   | "musketBayonet"
@@ -763,23 +763,38 @@ const WEAPONS: Record<WeaponId, WeaponSpec> = {
     ],
   },
   /**
-   * Imperial commander: a gold staff of command crowned with a spread eagle.
-   * The eagle's breast is the casting point, so her volleys leave the finial.
+   * The Marengo sword: the imperial commander's presentation blade, named for
+   * the field it was carried on. Everything about it is a gift rather than an
+   * issue weapon — an ivory grip bound with gold wire, a laurelled knuckle bow,
+   * a brilliant set in the guard and an eagle's head for a pommel — and its
+   * blade is the longest, straightest thing worn at the imperial court. It is
+   * carried in the off hand: her right hand is the one that shoots.
    */
-  eagleStaff: {
-    grip: 0.16,
-    focus: 0.575,
-    aim: new THREE.Vector3(-0.04, 1, 0.1),
+  marengoSword: {
+    grip: 0.09,
+    aim: new THREE.Vector3(-0.05, 1, 0.13),
     offset: new THREE.Vector3(0.02, 0, 0.03),
     build: () => [
-      { geometry: shaft(0.5, 0.016, 0.014), role: "gold" },
-      { geometry: ball(0.026, 0.0), role: "gold" },
-      { geometry: ring(0.024, 0.008, 0.14), role: "cloth" },
-      { geometry: ring(0.024, 0.008, 0.34), role: "cloth" },
-      { geometry: ring(0.034, 0.009, 0.5), role: "gold" },
-      { geometry: box(0.07, 0.026, 0.05, 0.52), role: "gold" },
-      ...eagleParts(0.086, 0.575, "gold"),
-      { geometry: ball(0.017, 0.575, 0, 0.05), role: "gem" },
+      // Ivory grip under gold binding wire.
+      { geometry: shaft(0.15, 0.017, 0.015), role: "stone" },
+      { geometry: ring(0.02, 0.005, 0.036), role: "gold" },
+      { geometry: ring(0.02, 0.005, 0.075), role: "gold" },
+      { geometry: ring(0.02, 0.005, 0.114), role: "gold" },
+      // Eagle's head pommel — the one motif that names the owner from above.
+      ...eagleParts(0.05, -0.03, "gold"),
+      // Laurelled guard: ferrule, knuckle bow, quillon and a set brilliant.
+      { geometry: ring(0.024, 0.009, 0.146), role: "gold" },
+      { geometry: knuckleBow(0.058, 0.008, 0.086), role: "gold" },
+      { geometry: box(0.115, 0.02, 0.028, 0.168), role: "gold" },
+      { geometry: ball(0.017, 0.168, 0.058), role: "gold" },
+      { geometry: ball(0.017, 0.168, -0.042), role: "gold" },
+      { geometry: ball(0.013, 0.176, 0, 0.026), role: "gem" },
+      { geometry: box(0.046, 0.034, 0.026, 0.192), role: "gold" },
+      // A long, barely curved court blade — a sabre in name, a sword in line.
+      ...curvedBlade(0.52, 0.07, 0.019, 0.208, 0.22, 6).map((geometry) => ({
+        geometry,
+        role: "steel" as const,
+      })),
     ],
   },
   /**
@@ -977,7 +992,9 @@ const LOADOUT: Record<ArsenalId, Record<PieceKind, Loadout>> = {
     // Emperor's clip draws and shoots with the right, so a sabre there would
     // leave him aiming a blade with the gun forgotten at his hip.
     k: { main: "officerPistol", off: "imperialSabre" },
-    q: { main: "eagleStaff" },
+    // The commander answers the Emperor's example: a flintlock in the firing
+    // hand and the Marengo sword worn on the other. No staff, no sorcery.
+    q: { main: "officerPistol", off: "marengoSword" },
     // The marshal is the army's marksman: a rifled long arm and no staff of
     // office at all. His whole beat is fought from one knee, at range.
     b: { main: "marksmanRifle" },
