@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, ScrollText, Type } from "lucide-react";
+import { ArrowDown, Check, Copy, ScrollText, Type } from "lucide-react";
 
 import { audio } from "../audio/audioManager";
 import type { Faction, GameResult, LedgerMove } from "../core/types";
@@ -63,6 +63,8 @@ export const MoveLedger = memo(function MoveLedger({
   const [figurine, setFigurine] = useState(true);
   const [copied, setCopied] = useState(false);
   const [activePly, setActivePly] = useState<number | null>(null);
+  /** True while the player is reading back through the record rather than watching its end. */
+  const [reviewing, setReviewing] = useState(false);
 
   const rows = useMemo<LedgerRow[]>(() => {
     const out: LedgerRow[] = [];
@@ -88,7 +90,19 @@ export const MoveLedger = memo(function MoveLedger({
   const handleScroll = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    pinnedRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 28;
+    const atEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 28;
+    pinnedRef.current = atEnd;
+    setReviewing((current) => (current === !atEnd ? current : !atEnd));
+  }, []);
+
+  /** Re-pin the record to its newest move after a read-back. */
+  const jumpToLatest = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    audio.blip("hover");
+    pinnedRef.current = true;
+    setReviewing(false);
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -169,63 +183,78 @@ export const MoveLedger = memo(function MoveLedger({
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="mc-history mc-ledger flex-1 overflow-y-auto px-2 py-1.5"
-        onPointerLeave={() => hover(activePly === null ? null : (moves[activePly] ?? null))}
-      >
-        {rows.length === 0 ? (
-          <p className="px-2 py-8 text-center text-xs italic leading-relaxed text-[#7d6f57]">
-            The scribe waits.
-            <br />
-            No moves recorded yet.
-          </p>
-        ) : (
-          <>
-            {rows.map((row, index) => (
-              <div key={row.number} className="mc-ledger-row" style={{ animationDelay: `${Math.min(index, 6) * 18}ms` }}>
-                <span className="mc-ledger-no">{row.number}</span>
-                <MoveCell
-                  move={row.white}
-                  figurine={figurine}
-                  isLast={row.white?.ply === lastPly}
-                  isActive={row.white?.ply === activePly}
-                  onHover={hover}
-                  onPick={pick}
-                  pending={playing && row.white === null && turn === "w"}
-                  thinking={thinking}
-                />
-                <MoveCell
-                  move={row.black}
-                  figurine={figurine}
-                  isLast={row.black?.ply === lastPly}
-                  isActive={row.black?.ply === activePly}
-                  onHover={hover}
-                  onPick={pick}
-                  pending={playing && row.black === null && turn === "b"}
-                  thinking={thinking}
-                />
-              </div>
-            ))}
-            {playing && turn === "w" ? (
-              <div className="mc-ledger-row">
-                <span className="mc-ledger-no">{rows.length + 1}</span>
-                <MoveCell
-                  move={null}
-                  figurine={figurine}
-                  isLast={false}
-                  isActive={false}
-                  onHover={hover}
-                  onPick={pick}
-                  pending
-                  thinking={thinking}
-                />
-                <span />
-              </div>
-            ) : null}
-          </>
-        )}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="mc-history mc-ledger flex-1 overflow-y-auto px-2 py-1.5"
+          onPointerLeave={() => hover(activePly === null ? null : (moves[activePly] ?? null))}
+        >
+          {rows.length === 0 ? (
+            <p className="px-2 py-8 text-center text-xs italic leading-relaxed text-[#7d6f57]">
+              The scribe waits.
+              <br />
+              No moves recorded yet.
+            </p>
+          ) : (
+            <>
+              {rows.map((row, index) => (
+                <div
+                  key={row.number}
+                  className="mc-ledger-row"
+                  style={{ animationDelay: `${Math.min(index, 6) * 18}ms` }}
+                >
+                  <span className="mc-ledger-no">{row.number}</span>
+                  <MoveCell
+                    move={row.white}
+                    figurine={figurine}
+                    isLast={row.white?.ply === lastPly}
+                    isActive={row.white?.ply === activePly}
+                    onHover={hover}
+                    onPick={pick}
+                    pending={playing && row.white === null && turn === "w"}
+                    thinking={thinking}
+                  />
+                  <MoveCell
+                    move={row.black}
+                    figurine={figurine}
+                    isLast={row.black?.ply === lastPly}
+                    isActive={row.black?.ply === activePly}
+                    onHover={hover}
+                    onPick={pick}
+                    pending={playing && row.black === null && turn === "b"}
+                    thinking={thinking}
+                  />
+                </div>
+              ))}
+              {playing && turn === "w" ? (
+                <div className="mc-ledger-row">
+                  <span className="mc-ledger-no">{rows.length + 1}</span>
+                  <MoveCell
+                    move={null}
+                    figurine={figurine}
+                    isLast={false}
+                    isActive={false}
+                    onHover={hover}
+                    onPick={pick}
+                    pending
+                    thinking={thinking}
+                  />
+                  <span />
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+
+        {/* Only while reading back: the record has scrolled away from its own end,
+            so there has to be a way back to the move being played. */}
+        {reviewing && rows.length > 0 ? (
+          <button type="button" className="mc-ledger-latest" onClick={jumpToLatest}>
+            <ArrowDown size={10} strokeWidth={2.6} />
+            Latest
+          </button>
+        ) : null}
       </div>
 
       {token ? (

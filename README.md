@@ -170,8 +170,8 @@ The board owns the screen; every panel is either short, in a corner, or foldable
 | --- | --- |
 | Top left | Whose turn it is, the thinking pulse, the check banner, the showcase duel counter — and the field tally under it |
 | Top right | Clocks, then the icon rail — take back, resign, new duel, sound, fullscreen, flip, tactical, camera menu, settings |
-| Right, under the bar | Spoils: both captured trays and the material score (desktop only; it folds into the chronicle on narrow screens) |
-| Bottom left | The chronicle sigil — a corner button with a move counter that unfurls the record on demand (`H`) |
+| Right flank | The rail: spoils (both captured trays and the material score) under the bar, then the **move record** running down the rest of the flank beside the board. Desktop and tablet only — on a phone both fold into the chronicle |
+| Bottom left | The chronicle sigil — a corner button with a move counter that shows or hides the record (`H`) |
 | Bottom right | The showcase rail, only during a showcase duel |
 
 - **The field tally** (`.mc-tally`) sits directly under the turn slate: one row per army with its
@@ -1331,7 +1331,7 @@ no other**:
 - **Chronicle corner** (`.mc-hud-corner`) — bottom inset for the home bar, left inset for a side
   cutout. Its base padding still steps 0.5 → 0.75 → 1 rem with the screen, so the inset is added
   to the right number rather than replacing it.
-- **AI vs AI transport, clean-capture button, frame counter, spoils rail** — each shifted off the
+- **AI vs AI transport, clean-capture button, frame counter, flank rail** — each shifted off the
   corner it is docked in. The transport's `max-width` subtracts the horizontal insets too, so it
   wraps instead of running under a rounded corner.
 - **Full-screen panels** (menu, settings, result) use `.mc-modal-pad`. The dimmed backdrop is
@@ -1349,7 +1349,7 @@ Any browser with **WebGL 2** and **Web Audio**: current Chrome, Edge, Firefox an
 on phone, tablet and desktop. Touch orbit, pinch zoom and tap-to-move are supported, the
 framing is solved for the screen it is drawn into (see
 [Fitting the hall to the screen](#fitting-the-hall-to-the-screen)), and on narrow screens the
-move ledger folds into a corner button so the board keeps the whole viewport.
+move ledger leaves the flank rail for a corner button so the board keeps the whole viewport.
 
 On Linux, check `chrome://gpu` / `about:support` first: without hardware acceleration the browser
 falls back to llvmpipe, and the scene is then rendered by the CPU. The game still runs — see

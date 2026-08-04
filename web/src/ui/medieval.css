@@ -80,11 +80,37 @@
   }
 }
 
-/* Spoils rail and the frame counter — desktop and tablet only, but a tablet in
-   landscape still has a home bar and rounded corners. */
-.mc-spoils-dock {
+/* The flank rail (spoils above, move record below) and the frame counter —
+   desktop and tablet only, but a tablet in landscape still has a home bar and
+   rounded corners. The rail is anchored top AND bottom so the record grows into
+   whatever height the screen has left, stopping clear of the corner transport. */
+.mc-side-rail {
   top: calc(6rem + var(--mc-safe-top));
   right: calc(1rem + var(--mc-safe-right));
+  bottom: calc(3.6rem + var(--mc-safe-bottom));
+}
+
+/* The record slides in from its own edge rather than rising like the spoils —
+   it belongs to the flank, so it should read as unrolling from it. */
+.mc-rail-ledger {
+  animation: mc-rail-in 300ms cubic-bezier(0.2, 1.2, 0.35, 1) both;
+}
+
+@keyframes mc-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-rail-ledger {
+    animation: none;
+  }
 }
 
 .mc-fps {
@@ -977,6 +1003,55 @@
 
 .mc-ledger-result {
   text-shadow: 0 0 18px rgba(216, 177, 99, 0.5);
+}
+
+/* Read-back escape hatch: only present once the record has been scrolled away
+   from its own end, so the player can always get back to the move being played. */
+.mc-ledger-latest {
+  position: absolute;
+  bottom: 0.45rem;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.52rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #1c1508;
+  border: 1px solid rgba(28, 21, 8, 0.5);
+  background: linear-gradient(180deg, #f6dfa5, #c69e54);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: mc-latest-in 220ms cubic-bezier(0.2, 1.3, 0.35, 1) both;
+}
+
+.mc-ledger-latest:hover {
+  background: linear-gradient(180deg, #fff0cd, #d8b163);
+}
+
+.mc-ledger-latest:active {
+  transform: translateX(-50%) scale(0.94);
+}
+
+@keyframes mc-latest-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-ledger-latest {
+    animation: none;
+  }
 }
 
 .mc-vignette {

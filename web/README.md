@@ -83,11 +83,19 @@ untouched.
 `GameShell.tsx` owns the phases (loading → menu → playing), the settings, attract mode and the
 keyboard shortcuts; `Hud.tsx` is everything on screen during a game. The board keeps the
 viewport: the turn slate (with the field tally under it) and the icon rail sit in the top corners,
-the spoils panel is desktop-only,
+the right flank carries the rail (`.mc-side-rail`) with the spoils above and the **move record**
+below it, desktop and tablet only,
 phones get 34px buttons and drop the two redundant icons (flip lives in the camera menu,
 fullscreen is ignored by iOS),
-the move record lives behind a corner sigil (`H`), and the showcase transport is a slim
+the record folds behind the corner sigil (`H`) there, and the showcase transport is a slim
 bottom-right rail that folds down to a single icon.
+
+**Where the ledger is mounted.** Exactly one `MoveLedger` is alive at a time: docked in the flank
+rail at `≥ 1024px`, folded into the bottom-left chronicle panel below it. The breakpoint is read in
+JS (`useRoomForRail` in `Hud.tsx`), not with `lg:hidden` on two copies — two mounted ledgers would
+both drive the board's move preview and both fight over the scroll pin. The rail is anchored top
+**and** bottom so the record grows into the height the screen has left, stopping clear of the
+bottom-right transport.
 
 **Safe areas.** `index.html` opts into `viewport-fit=cover` so the hall fills a notched screen —
 and so `env(safe-area-inset-*)` reports real pixels at all (without it iOS returns `0px` for every
@@ -95,7 +103,7 @@ inset, which is why the turn slate used to sit under the Dynamic Island). `medie
 those into `--mc-safe-top/right/bottom/left`, and each edge-anchored surface spends only the inset
 for the edge it is pinned to: `.mc-hud-top` (top + both flanks, since a landscape cutout moves to
 the side), `.mc-hud-corner` (bottom + left), `.mc-demo-dock`, `.mc-cinema-restore`, `.mc-fps`,
-`.mc-spoils-dock`, and `.mc-modal-pad` for the full-screen panels — whose dimmed backdrop stays at
+`.mc-side-rail`, and `.mc-modal-pad` for the full-screen panels — whose dimmed backdrop stays at
 `inset-0` on purpose, or the hall would show through beside the cutout. Base padding still steps
 with the breakpoint (`--mc-edge`: 0.5 → 0.75 → 1 rem); the inset is added to it. Every variable is
 `0px` on a screen without a cutout, so nothing else changes.

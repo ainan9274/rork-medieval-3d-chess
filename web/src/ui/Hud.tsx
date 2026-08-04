@@ -98,6 +98,28 @@ function formatClock(ms: number): string {
  * meter shows 0:00 for the first second instead of jumping straight to 0:01, and
  * it grows an hours field only once a battle actually runs that long.
  */
+/**
+ * Whether there is room for the record to live beside the board.
+ *
+ * The ledger is mounted in exactly one place at a time — docked in the side rail
+ * on a wide screen, folded into the bottom-left panel on a narrow one. Rendering
+ * both and hiding one with CSS would keep two live ledgers fighting over the
+ * board preview and the scroll pin, so the choice is made in JS.
+ */
+function useRoomForRail(): boolean {
+  const [wide, setWide] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia("(min-width: 1024px)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const onChange = (event: MediaQueryListEvent): void => setWide(event.matches);
+    setWide(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
+
 function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const seconds = total % 60;
@@ -132,7 +154,12 @@ export function Hud({
   onToggleCinema,
   getElapsed,
 }: HudProps) {
-  const [chronicleOpen, setChronicleOpen] = useState(false);
+  const railRoom = useRoomForRail();
+  // Beside the board the record costs the player nothing, so it stands open from
+  // the first move; on a phone it would cover ranks, so there it stays folded.
+  const [chronicleOpen, setChronicleOpen] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia("(min-width: 1024px)").matches,
+  );
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
   const [transportOpen, setTransportOpen] = useState(true);
   const [activePreset, setActivePreset] = useState<CameraPreset>(() =>
@@ -438,9 +465,15 @@ export function Hud({
         </div>
       </div>
 
-      {/* Spoils tucks under the top bar on desktop — it is short and clear of
-          the board. */}
-      <div className="mc-spoils-dock mc-rise pointer-events-auto absolute hidden w-56 lg:block xl:w-60">{spoils}</div>
+      {/* Side rail: the spoils sit under the top bar and the move record runs
+          down the rest of the flank, beside the board, so the battle can be read
+          back without a rank being covered. Desktop and tablet only. */}
+      <div className="mc-side-rail mc-rise pointer-events-none absolute hidden w-56 flex-col gap-2 lg:flex xl:w-60">
+        <div className="pointer-events-auto">{spoils}</div>
+        {railRoom && chronicleOpen ? (
+          <div className="mc-rail-ledger pointer-events-auto min-h-0 flex-1">{ledger}</div>
+        ) : null}
+      </div>
 
       {/* Chronicle: a small corner sigil that unfurls the record on demand. The
           wrapper stays click-through so the board keeps every tap that is not
@@ -449,16 +482,24 @@ export function Hud({
         ref={chronicleRef}
         className="mc-hud-corner pointer-events-none absolute bottom-0 left-0 z-30 flex flex-col items-start gap-2"
       >
-        {chronicleOpen ? (
-          <div className="mc-chronicle-panel pointer-events-auto flex h-[min(56vh,460px)] w-[min(84vw,18.5rem)] flex-col gap-2 lg:w-64">
+        {chronicleOpen && !railRoom ? (
+          <div className="mc-chronicle-panel pointer-events-auto flex h-[min(56vh,460px)] w-[min(84vw,18.5rem)] flex-col gap-2">
             <div className="min-h-0 flex-1">{ledger}</div>
-            <div className="lg:hidden">{spoils}</div>
+            <div>{spoils}</div>
           </div>
         ) : null}
 
         <Tooltip
-          label={chronicleOpen ? "Close the chronicle" : "Chronicle"}
-          hint={chronicleOpen ? "Fold the record back into the corner." : "The full move record and the spoils taken."}
+          label={chronicleOpen ? "Hide the chronicle" : "Chronicle"}
+          hint={
+            chronicleOpen
+              ? railRoom
+                ? "Clear the record off the flank and give the hall the whole screen."
+                : "Fold the record back into the corner."
+              : railRoom
+                ? "Show the move record beside the board."
+                : "The full move record and the spoils taken."
+          }
           keys="H"
           side="top"
         >
