@@ -1508,6 +1508,14 @@ type LoadedGltf = Awaited<ReturnType<GLTFLoader["loadAsync"]>>;
  * queues through a small window and is retried before it is given up on.
  */
 const MAX_PARALLEL_DOWNLOADS = 4;
+/**
+ * How many times a single clip URL is chased before it is written off. Each
+ * request is already five retries deep (see {@link loadGltf}), so two of them
+ * survives any transient drop — while a clip the server simply does not have
+ * (a drill that was never generated) stops costing every later fight a
+ * four-attempt round trip before the beat can start.
+ */
+const MAX_CLIP_ATTEMPTS = 2;
 let activeDownloads = 0;
 const downloadQueue: (() => void)[] = [];
 
@@ -1556,10 +1564,24 @@ export class PieceFactory {
   private loaded = false;
   /** Which army each side is currently mustering. */
   private skins: Record<Faction, ArmySkinId> = { ...DEFAULT_ARMY_SKINS };
+  /**
+   * The armies the templates on hand were actually built from, or null while
+   * nothing has been mustered yet.
+   */
+  private mustered: Record<Faction, ArmySkinId> | null = null;
+  /** True while a muster is downloading. */
+  private mustering = false;
+  /**
+   * Serialises musters. Two of them writing into {@link templates} at once is
+   * what used to split an army in half — see {@link muster}.
+   */
+  private queue: Promise<void> = Promise.resolve();
   /** Clip URLs per roster, so a clip can still be fetched long after start-up. */
   private clipSources = new Map<TemplateKey, PieceAnimationSet>();
   /** In-flight clip downloads, keyed by URL, so nothing is fetched twice. */
   private clipJobs = new Map<string, Promise<THREE.AnimationClip | null>>();
+  /** Failed attempts per clip URL, so a missing file is not chased forever. */
+  private clipFailures = new Map<string, number>();
   private clipListener: ClipListener | null = null;
   private warming: Promise<void> | null = null;
 
@@ -1580,12 +1602,16 @@ export class PieceFactory {
   /**
    * Records the armies to muster.
    *
-   * @returns whether anything changed, i.e. whether {@link reload} is needed
+   * @returns whether a {@link reload} is needed to honour them. Before the
+   *   first muster the answer is no even when the armies changed: the load that
+   *   is about to run reads {@link skins} itself, and a reload racing it is
+   *   precisely what used to leave one side of the board without its clips.
    */
   setSkins(next: Record<Faction, ArmySkinId>): boolean {
-    if (next.w === this.skins.w && next.b === this.skins.b) return false;
+    const changed = next.w !== this.skins.w || next.b !== this.skins.b;
     this.skins = { w: next.w, b: next.b };
-    return true;
+    if (!changed) return false;
+    return this.mustered !== null || this.mustering;
   }
 
   /**
@@ -1596,16 +1622,68 @@ export class PieceFactory {
     this.loaded = false;
   }
 
-  /** Drops the current armies and loads the ones {@link setSkins} asked for. */
-  async reload(onProgress?: (loaded: number, total: number) => void): Promise<void> {
-    this.disposeTemplates();
-    this.clipJobs.clear();
-    this.clipSources.clear();
-    this.warming = null;
-    await this.load(onProgress);
+  /** Musters the armies {@link setSkins} asked for, unless they are already up. */
+  load(onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    return this.enqueue(() => this.muster(onProgress));
   }
 
-  async load(onProgress?: (loaded: number, total: number) => void): Promise<void> {
+  /** Drops the current armies and musters the ones {@link setSkins} asked for. */
+  reload(onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    return this.enqueue(async () => {
+      this.dropArmies();
+      await this.muster(onProgress);
+    });
+  }
+
+  /** Runs a job behind every muster already queued, so none of them overlap. */
+  private enqueue(job: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(job);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Frees the mustered armies and forgets everything keyed to them. */
+  private dropArmies(): void {
+    this.disposeTemplates();
+    this.clipJobs.clear();
+    this.clipFailures.clear();
+    this.clipSources.clear();
+    this.warming = null;
+    this.mustered = null;
+  }
+
+  /**
+   * Downloads the two armies and normalises every roster.
+   *
+   * Never allowed to run twice over the same map (see {@link enqueue}). The
+   * shell records the armies it remembers from last visit and *then* loads,
+   * which used to start a swap and the first download at the same time. Both
+   * runs wrote into `templates`, so when both sides wore the same army the
+   * borrowed roster was left pointing at the *first* run's sculpt while the
+   * roster it borrowed from had been replaced by the second run's. The two
+   * stopped sharing one `clips` object, and since a borrowed roster carried no
+   * clip URLs of its own, that side could never fetch a stride, a strike or a
+   * death again: it slid across the board and killed without swinging.
+   */
+  private async muster(onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    if (this.mustered && this.mustered.w === this.skins.w && this.mustered.b === this.skins.b) {
+      // Already standing in exactly these armies.
+      this.loaded = true;
+      onProgress?.(1, 1);
+      return;
+    }
+    if (this.templates.size > 0) this.dropArmies();
+    this.mustering = true;
+    try {
+      await this.download(onProgress);
+      this.mustered = { ...this.skins };
+      this.loaded = true;
+    } finally {
+      this.mustering = false;
+    }
+  }
+
+  private async download(onProgress?: (loaded: number, total: number) => void): Promise<void> {
     const kinds: PieceKind[] = ["k", "q", "b", "n", "r", "p"];
     // The side whose skin is loaded first keeps its own painted textures; when
     // both sides wear the same army the other one is re-tinted into livery, so
@@ -1641,19 +1719,25 @@ export class PieceFactory {
     // Anything still missing borrows the other side's figure.
     for (const kind of kinds) {
       for (const faction of factions) {
-        if (this.templates.has(`${faction}${kind}`)) continue;
-        const other = this.templates.get(`${faction === "w" ? "b" : "w"}${kind}`);
+        const key: TemplateKey = `${faction}${kind}`;
+        if (this.templates.has(key)) continue;
+        const lender: TemplateKey = `${faction === "w" ? "b" : "w"}${kind}`;
+        const other = this.templates.get(lender);
         const arsenal = ARMY_SKINS[this.skins[faction]].arsenal;
-        if (other) this.templates.set(`${faction}${kind}`, { ...other, ownLivery: false, arsenal: other.arsenal });
-        else {
-          this.templates.set(
-            `${faction}${kind}`,
-            this.normalize(buildProceduralFigure(kind), kind, {}, false, arsenal),
-          );
+        if (other) {
+          this.templates.set(key, { ...other, ownLivery: false, arsenal: other.arsenal });
+          // The borrower is handed the lender's clip URLs under its own key too.
+          // Both rosters share one `clips` object, so nothing is fetched twice —
+          // but a roster that cannot name its own clips has no way back if that
+          // sharing is ever lost, and it is the whole army wearing the same skin
+          // as the other side that borrows.
+          const lent = this.clipSources.get(lender);
+          if (lent) this.clipSources.set(key, lent);
+        } else {
+          this.templates.set(key, this.normalize(buildProceduralFigure(kind), kind, {}, false, arsenal));
         }
       }
     }
-    this.loaded = true;
   }
 
   /** Rigged sculpt when the army has one, else its static GLB. */
@@ -1756,19 +1840,44 @@ export class PieceFactory {
     if (!template || !url) return Promise.resolve(null);
 
     const running = this.clipJobs.get(url);
-    if (running) return running;
+    // A download started for another roster still has to land on this one: two
+    // rosters asking for the same file do not always share one `clips` object.
+    if (running) return running.then((clip) => (clip ? this.bindClip(url, name, clip) : null));
+    if ((this.clipFailures.get(url) ?? 0) >= MAX_CLIP_ATTEMPTS) return Promise.resolve(null);
+
     const job = this.fetchClip(url, name).then((clip) => {
       if (!clip) {
-        // Not cached as a failure: the next capture gets another attempt.
+        // Not cached as a failure: the next capture gets another attempt, up to
+        // MAX_CLIP_ATTEMPTS of them.
         this.clipJobs.delete(url);
+        this.clipFailures.set(url, (this.clipFailures.get(url) ?? 0) + 1);
         return null;
       }
-      template.clips[name] = clip;
-      this.clipListener?.(this.sharingKeys(template), name, clip);
-      return clip;
+      return this.bindClip(url, name, clip);
     });
     this.clipJobs.set(url, job);
     return job;
+  }
+
+  /**
+   * Binds a downloaded clip onto **every** roster that was waiting for that URL
+   * and reports all of them to the listener, so no figure is left without a
+   * stride merely because another roster asked for the same file first.
+   */
+  private bindClip(url: string, name: ClipName, clip: THREE.AnimationClip): THREE.AnimationClip {
+    const keys: TemplateKey[] = [];
+    for (const [key, entry] of this.templates) {
+      // Rosters sharing one `clips` object are filled by a single write.
+      if (entry.clips[name] === clip) {
+        keys.push(key);
+        continue;
+      }
+      if (entry.clips[name] || this.clipUrl(entry, key, name) !== url) continue;
+      entry.clips[name] = clip;
+      keys.push(key);
+    }
+    if (keys.length > 0) this.clipListener?.(keys, name, clip);
+    return clip;
   }
 
   /**
@@ -1846,7 +1955,9 @@ export class PieceFactory {
   dispose(): void {
     this.clipListener = null;
     this.clipJobs.clear();
+    this.clipFailures.clear();
     this.clipSources.clear();
+    this.mustered = null;
     this.disposeTemplates();
   }
 

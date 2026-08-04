@@ -206,6 +206,23 @@ geometry is freed), reloads the rosters, stands the new army up and repoints the
 With the same skin on both sides only the skin's `native` faction keeps its painted textures;
 the other side falls through `applyFactionLook()` and is tinted into dark livery.
 
+**One army wearing both sides is loaded once.** Only the `native` faction's six rosters are
+downloaded; the other side renders the *same* `Template` objects, sharing one `scene` and — the
+part that matters — one `clips` object, so a clip fetched for either side is bound to both.
+
+**Musters are serialised** (`PieceFactory.load` / `reload` both queue through `muster()`), and a
+muster whose armies are already standing is a no-op. Two of them writing into the roster map at
+once is what used to break exactly this case: the shell records the armies remembered from last
+visit and *then* calls `load()`, so any non-default choice kicked off a swap and the first
+download simultaneously. Both runs filled `templates`, leaving the borrowed roster pointing at
+run A's sculpt while the roster it borrowed from had been replaced by run B's. The two stopped
+sharing a `clips` object, and a borrowed roster carried no clip URLs of its own — so that side
+could never fetch a stride, a strike or a death again. It slid across the board and killed
+without swinging, while the other side animated perfectly. Two things close it for good:
+`setSkins()` reports "no reload needed" until something has actually been mustered (the pending
+load reads the choice itself), and a borrowed roster is now handed the lender's clip URLs under
+its own key as well, so it can always name its own clips.
+
 ## Character animation
 
 Every figure is a rigged (skinned) character with up to six skeletal clips, listed per kind in
@@ -255,6 +272,13 @@ How it is wired (`src/scene/pieces.ts`):
   `armStride()` for the walk or run it is about to play (up to 0.6 s). Without the latter the
   first move of a game was staged before its stride had landed and the figure slid on its
   stance — which read as that rank having lost its walk animation.
+- **A downloaded clip lands on every roster that wanted it.** Downloads are deduplicated by URL,
+  and `bindClip()` then binds the result onto each roster whose clip URL matches — not just the
+  one that happened to ask first — and reports them all to `installClip`. A clip URL that comes
+  back dead is written off after `MAX_CLIP_ATTEMPTS` requests (ten network attempts): the
+  Emperor's rig has **no** reload take on the server, and chasing it charged every one of his
+  shots a full round of failed fetches before the beat could continue. He now simply lowers the
+  pistol — regenerate a reload on that rig to give him the drill back.
 - With no strike clip at all, `SceneEngine.lunge()` swings by hand (wind-up, twist, lean back,
   blow over the top); the tilt is held by `PieceView.setStrikeTilt()` so the mixer cannot wipe it.
 

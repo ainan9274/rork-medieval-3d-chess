@@ -205,8 +205,19 @@ closes, sabre first — **nobody in this army casts anything**.
 
 Swapping an army re-downloads its rosters, so the swap waits for any fight on screen to finish,
 takes the old figures down and stands the new ones up (a second or two on a cold cache). Give
-**both** sides the same army and the far side is re-tinted into dark livery, so the two forces
-never become impossible to tell apart.
+**both** sides the same army and it is downloaded once: the far side renders the very same
+sculpts, re-tinted into dark livery so the two forces never become impossible to tell apart, and
+sharing one set of clips with the side it borrows from.
+
+That sharing is why army loads are **serialised**, and why asking for armies that are already
+standing does nothing at all. The app remembers your armies between visits and hands them to the
+board *before* the first download starts, so any non-default choice used to begin a swap and the
+first load at the same moment. Both runs filled the same roster table, and with one army on both
+sides the borrowing side was left holding the first run's sculpt while the side it borrowed from
+had been replaced by the second run's. They stopped sharing their clips, and a borrowing roster
+kept no clip addresses of its own — so that side could never fetch another stride, strike or
+death. It slid across the board and killed without swinging while the other side animated
+perfectly. Choosing the same army for both sides was the one way to hit it every time.
 
 ## Battlegrounds
 
@@ -398,6 +409,12 @@ How it is wired (`src/scene/pieces.ts`):
   0.6 s). Without that second guard the opening move was staged while the walk clips were still
   in the air, and the figure crossed the square frozen in its stance: the exact symptom of "this
   rank has lost its walk animation".
+- **A clip binds to every roster that wanted it.** Downloads are shared by URL, and `bindClip()`
+  hands the result to *each* roster whose clip address matches rather than only the one that asked
+  first — so no figure is left without a stride because its twin got there earlier. A clip URL the
+  server does not have is written off after `MAX_CLIP_ATTEMPTS` requests: the Emperor's rig has no
+  reload take on R2 at all, and chasing it charged every one of his shots a full round of failed
+  fetches before the beat could continue. He lowers the pistol instead until one is generated.
 - If a strike clip is genuinely unavailable, `SceneEngine.lunge()` performs the swing by hand —
   wind-up, twist, lean back, then the blow over the top. The tilt is held through
   `PieceView.setStrikeTilt()` and re-applied after the mixer, which otherwise owns the pose.

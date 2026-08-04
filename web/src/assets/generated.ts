@@ -216,7 +216,12 @@ const ANIMATED_MODELS: Record<ArmySkinId, Roster<PieceAnimationSet>> = {
       attack: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-cowboy-quick-draw-shooting.glb`,
       death: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-dead.glb`,
       walk: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-casual-walk-inplace.glb`,
-      reload: `${MODEL_BASE}/b533d4ac-cac7-47f2-887d-8b90ee8626a8-anim-standing-reload.glb`,
+      // No reloading drill: unlike every other barrel in the army, this rig has
+      // no reload take on the server (`-anim-standing-reload.glb` and
+      // `-anim-kneeling-reload.glb` both 404). Naming one anyway cost every
+      // Emperor's shot a dead download before the beat could continue, so the
+      // Emperor simply lowers the pistol — `playReload` returns 0 and the fight
+      // skips the beat. Regenerate a reload on this rig to give him one.
     },
     // The commander fights at range, but with powder rather than sorcery: the
     // Marengo sword stays in her left hand and the flintlock does the work.
