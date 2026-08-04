@@ -5,12 +5,13 @@ import { audio } from "../audio/audioManager";
 import { GameController } from "../core/gameController";
 import type { Faction, LedgerMove } from "../core/types";
 import { Clapperboard } from "lucide-react";
-import { ARENA_LOOKS, DEFAULT_ARENA, type ArenaTheme } from "../scene/arena";
+import { ARENA_LOOKS, DEFAULT_ARENA } from "../scene/arena";
 import { detectQualityPreset, type QualityPreset } from "../scene/quality";
 import { SceneEngine, type CameraPreset, type ShowcaseCamera } from "../scene/sceneEngine";
 import { GameOverModal } from "./GameOverModal";
 import { Hud } from "./Hud";
 import { MainMenu, type MatchConfig } from "./MainMenu";
+import type { MusterChoice } from "./Muster";
 import { SettingsPanel, type GameSettings } from "./SettingsPanel";
 import { useGameSnapshot } from "./useGameSnapshot";
 import "./medieval.css";
@@ -206,12 +207,19 @@ export function GameShell() {
   }, []);
 
   // ----------------------------------------------------------- apply settings
+  //
+  // The muster (armies + battleground) is deliberately pushed only outside a
+  // live duel. The pickers are already locked in the interface while playing;
+  // this is the second lock, so no future caller can swap an army out from under
+  // figures that are mid-fight.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine) return;
     engine.setQuality(settings.quality);
-    engine.setArena(settings.arena);
-    engine.setArmySkins(settings.skins);
+    if (phase !== "playing") {
+      engine.setArena(settings.arena);
+      engine.setArmySkins(settings.skins);
+    }
     engine.setCaptureCinematics(settings.captureCinematics);
     engine.setRotateBoard(settings.rotateBoard);
     engine.setRankBadges(settings.rankBadges);
@@ -220,7 +228,7 @@ export function GameShell() {
     audio.setMuted(settings.muted);
     saveRenderPrefs({ safeMode: settings.safeMode, brightness: settings.brightness });
     saveArmyPrefs(settings.skins);
-  }, [settings]);
+  }, [settings, phase]);
 
   // ------------------------------------------------------------- attract mode
   const stopAttract = useCallback(() => {
@@ -371,9 +379,14 @@ export function GameShell() {
     engine.setTacticalView(!engine.isTacticalView());
   }, []);
 
-  const handleArena = useCallback((theme: ArenaTheme) => {
+  /** War-table choice from the menu — armies and ground, before the first move. */
+  const handleMuster = useCallback((choice: MusterChoice) => {
     audio.blip("press");
-    setSettings((current) => (current.arena === theme ? current : { ...current, arena: theme }));
+    setSettings((current) =>
+      current.arena === choice.arena && current.skins.w === choice.skins.w && current.skins.b === choice.skins.b
+        ? current
+        : { ...current, arena: choice.arena, skins: choice.skins },
+    );
   }, []);
 
   const handlePreviewMove = useCallback((move: LedgerMove | null) => {
@@ -433,6 +446,8 @@ export function GameShell() {
           <MainMenu
             onStart={startMatch}
             onOpenSettings={() => setShowSettings(true)}
+            muster={{ skins: settings.skins, arena: settings.arena }}
+            onMuster={handleMuster}
             attract={attract}
             onInteract={stopAttract}
           />
@@ -454,8 +469,6 @@ export function GameShell() {
             cameraFlipped={cameraFlipped}
             tactical={tactical}
             onToggleTactical={handleToggleTactical}
-            arena={settings.arena}
-            onArena={handleArena}
             onPreviewMove={handlePreviewMove}
             onTogglePause={handleTogglePause}
             onDemoSpeed={handleDemoSpeed}
@@ -503,6 +516,7 @@ export function GameShell() {
             autoDetected={detected}
             gpu={gpu}
             fps={fps}
+            matchInProgress={phase === "playing"}
             onChange={setSettings}
             onClose={() => setShowSettings(false)}
           />

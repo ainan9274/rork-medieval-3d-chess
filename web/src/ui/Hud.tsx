@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 
 import type { GameSnapshot, LedgerMove, PieceKind } from "../core/types";
-import { ARENA_LOOKS, ARENA_ORDER, type ArenaTheme } from "../scene/arena";
 import type { CameraPreset, ShowcaseCamera } from "../scene/sceneEngine";
 import { Crest, Hourglass, pieceGlyph } from "./Heraldry";
 import { MoveLedger } from "./MoveLedger";
@@ -46,8 +45,6 @@ interface HudProps {
   cameraFlipped: boolean;
   tactical: boolean;
   onToggleTactical: () => void;
-  arena: ArenaTheme;
-  onArena: (theme: ArenaTheme) => void;
   onPreviewMove: (move: LedgerMove | null) => void;
   onTogglePause: () => void;
   onDemoSpeed: (speed: number) => void;
@@ -107,8 +104,6 @@ export function Hud({
   cameraFlipped,
   tactical,
   onToggleTactical,
-  arena,
-  onArena,
   onPreviewMove,
   onTogglePause,
   onDemoSpeed,
@@ -353,8 +348,8 @@ export function Hud({
           {/* Camera views live in a dropdown so nothing floats over the board */}
           <div className="relative" ref={cameraMenuRef}>
             <IconButton
-              label="Camera & arena"
-              hint="Choose a viewpoint and the hall it is fought in."
+              label="Camera"
+              hint="Choose the viewpoint on the battle."
               onClick={() => setCameraMenuOpen((open) => !open)}
               active={cameraMenuOpen}
             >
@@ -405,25 +400,6 @@ export function Hud({
                     />
                     Flip 180°
                   </button>
-                </div>
-
-                <p className="mc-display px-1 pb-1.5 pt-3 text-[0.52rem] tracking-[0.3em] text-[#a89268]">
-                  Battleground
-                </p>
-                <div className="flex flex-col gap-1">
-                  {ARENA_ORDER.map((theme) => (
-                    <button
-                      key={theme}
-                      type="button"
-                      className="mc-chip flex w-full items-center gap-2 text-left"
-                      data-active={arena === theme}
-                      onClick={() => onArena(theme)}
-                      title={ARENA_LOOKS[theme].note}
-                    >
-                      <span className="mc-arena-dot" data-arena={theme} />
-                      {ARENA_LOOKS[theme].label}
-                    </button>
-                  ))}
                 </div>
               </div>
             ) : null}

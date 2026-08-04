@@ -277,11 +277,12 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   └── tween.ts            promise-based tween engine
         ├── ui/             React + CSS overlay
         │   ├── GameShell.tsx       phases, settings, attract mode, keyboard shortcuts
-        │   ├── MainMenu.tsx        mode / colour / strength / clock selection
+        │   ├── MainMenu.tsx        mode / colour / strength / clock / muster selection
         │   ├── Hud.tsx             top bar, spoils, chronicle sigil, showcase rail
         │   ├── Tooltip.tsx         themed tooltip for the icon-only controls
         │   ├── MoveLedger.tsx      the chronicle: move list, PGN, hover preview
-        │   ├── SettingsPanel.tsx   armies, arena, graphics, cinematics, sound
+        │   ├── Muster.tsx          army + battleground pickers, and their locked in-match view
+        │   ├── SettingsPanel.tsx   muster (out of match), graphics, picture, cinematics, sound
         │   ├── Heraldry.tsx        crests, hourglasses, piece glyphs
         │   └── medieval.css        the whole overlay's look
         ├── audio/          Web Audio mixer with layered score stems

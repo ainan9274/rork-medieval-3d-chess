@@ -25,10 +25,11 @@ bun run preview
 | Select a figure | Click it (legal squares glow green, captures red) |
 | Move | Click a highlighted square (click the figure again to deselect) |
 | Promotion | Pick one of the four rotating figures on pedestals |
-| Camera & battleground | Camera icon in the top bar (presets, flip, tactical, the four arenas) |
+| Camera | Camera icon in the top bar (presets, flip, tactical) |
+| Armies & battleground | Picked on the main menu before the duel; read-only in settings once a duel is running |
 | What a button does | Hover, focus or tap it — every icon carries a tooltip |
 | Skip the intro | Click anywhere during the opening sweep |
-| Settings | Gear icon (armies, battleground, graphics preset, capture cinematics, board swing, sound) |
+| Settings | Gear icon (graphics preset, brightness, capture cinematics, board swing, rank crests, sound) |
 
 There is no drag-and-drop; both selecting and moving resolve on pointer release, and a press
 that travels more than 8px (16px for a finger) counts as a camera swing instead.

@@ -3,6 +3,7 @@ import { Clapperboard, Crown, Swords, Settings as SettingsIcon, Users } from "lu
 
 import type { DemoOptions, Difficulty, Faction } from "../core/types";
 import { Crest } from "./Heraldry";
+import { MusterSection, type MusterChoice } from "./Muster";
 
 export interface MatchConfig {
   mode: "ai" | "hotseat" | "demo";
@@ -15,6 +16,9 @@ export interface MatchConfig {
 interface MainMenuProps {
   onStart: (config: MatchConfig) => void;
   onOpenSettings: () => void;
+  /** Armies and battleground — settled here, before the first move. */
+  muster: MusterChoice;
+  onMuster: (choice: MusterChoice) => void;
   attract: boolean;
   onInteract: () => void;
 }
@@ -39,7 +43,7 @@ const CLOCKS: { label: string; value: number | null }[] = [
   { label: "15 min", value: 15 },
 ];
 
-export function MainMenu({ onStart, onOpenSettings, attract, onInteract }: MainMenuProps) {
+export function MainMenu({ onStart, onOpenSettings, muster, onMuster, attract, onInteract }: MainMenuProps) {
   const [tab, setTab] = useState<"ai" | "hotseat" | "demo">("ai");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [playerColor, setPlayerColor] = useState<Faction>("w");
@@ -235,6 +239,10 @@ export function MainMenu({ onStart, onOpenSettings, attract, onInteract }: MainM
             </div>
           </div>
         )}
+
+        <div className="mc-rule my-5" />
+
+        <MusterSection choice={muster} onChange={onMuster} />
         </div>
 
         <div className="mc-panel-foot shrink-0">
