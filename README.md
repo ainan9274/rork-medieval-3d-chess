@@ -182,14 +182,19 @@ Clocks: none, 5, 10 or 15 minutes, drawn as draining hourglasses.
 ## Armies
 
 Each side picks its army independently in **Settings → Armies** (near side / far side). An army
-skin is a whole civilisation: six sculpts, their skeletal clips, a procedural weapon family and
-a set of death cries.
+skin is a whole civilisation: six sculpts, their skeletal clips, a weapon family and a set of
+death cries.
 
 | Id | Army | King → pawn | Arms |
 | --- | --- | --- | --- |
 | `ivory` | **Ivory Kingdom** | King, Queen, Mage, Knight, Guardian, Footman | Greatsword, crystal sceptre and staff, warhammer, spear, heater / tower / round shields |
 | `sun` | **Sun Empire** | Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | Macuahuitl, sun sceptre, serpent staff, basalt maul, tepoztopilli, feathered chimalli |
-| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | Officer's flintlock pistol and dress sabre, a second flintlock over the Marengo sword, rifled long arm with sights and sling, cavalry sabre, empty hands behind a towed field gun, musket with fixed bayonet |
+| `empire` | **Grande Armée** | Napoléon, Imperial Commander, Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | **Sculpted, not built** (see [The Napoleonic arms](#the-napoleonic-arms)): An XIII officer's flintlock and a general's dress sabre, a second flintlock over the Marengo presentation sword, the 1793 Versailles rifled carbine, the An XI cuirassier sword, empty hands behind a towed field gun, and the Charleville 1777 with the bayonet fixed |
+
+The first two armies carry weapons built from boxes and cylinders, which is the right answer for
+arms nobody can check against an original. The Grande Armée's are **generated meshes of the real
+objects**: a Charleville musket and an An XI cavalry sword are documented down to their furniture,
+and an approximation of one reads as a toy in a hand that is otherwise a real sculpt.
 
 The Grande Armée is navy and gold throughout — red facings, brass imperial eagles, white
 breeches, bicornes, shakos and bearskins — with one silhouette per rank: Napoléon's sideways
@@ -256,7 +261,9 @@ Switchable at any time from the camera menu or Settings; each one is a complete 
         │   ├── jungle.ts           canopy, palms, vines, pollen for the Sun Temple
         │   ├── board.ts            tiles, base, engraved labels, highlight pool
         │   ├── pieces.ts           rigged GLB loading, clips, faction materials, mixers
-        │   ├── weapons.ts          procedural arms, shields and staves per rank
+        │   ├── weapons.ts          arms per rank: primitives, loadouts, hand/bone mounting
+        │   ├── armoury.ts          fits the generated Napoleonic weapons into the prop frame
+        │   ├── gltfQueue.ts        the one download window every GLB fetch shares
         │   ├── rankBadges.ts       floating heraldic crests
         │   ├── effects.ts          particle bursts, flashes, dissolve, camera shake
         │   ├── strikes.ts          per-rank blow visuals (slash arc, ground wave, pillar)
@@ -889,6 +896,61 @@ caster's `focus`. The **field gun is a towed prop**, not a held one: it hangs of
 in body axes with its own wheels, carriage, trail and imperial eagle, so it travels and turns
 with the guard but is untouched by the skeleton — a gun carriage must not crouch when its crew
 does. Flash lights are borrowed from the same fixed `SpellLightPool`.
+
+## The Napoleonic arms
+
+Every other army is armed from primitives, and should be: a fantasy greatsword has no original to
+be wrong about. The Grande Armée's arms do. A Charleville Model 1777, an An XI cuirassier sword and
+an An XIII officer's flintlock are documented objects down to their brass furniture, and a
+box-and-cylinder version of one reads as a toy in a hand that is otherwise a real sculpt — so all
+six are **generated meshes**, listed in `ARM_SCULPTS` (`src/assets/generated.ts`):
+
+| Rank | Weapon | Sculpted detail the primitives could not carry |
+| --- | --- | --- |
+| Line Infantry | Charleville 1777, bayonet fixed | Full walnut stock, brass butt plate and three barrel bands, lock with cock and frizzen, ramrod under the bore, socket bayonet past the muzzle |
+| Marshal-Tirailleur | 1793 Versailles rifled carbine | Raised cheek piece, leaf rear sight, brass ramrod pipes, sling from butt swivel to middle band, no bayonet |
+| Cuirassier | An XI heavy cavalry sword | Four-branch brass bowl guard, wire-bound grip, flat-backed blade with a wide fuller |
+| Napoléon | General officer's dress sabre | Gilt bronze knuckle-bow hilt, blued and gilt-etched blade |
+| Imperial Commander | Marengo presentation sword | Ivory grip under gold wire, laurel-chased bow, eagle's-head pommel |
+| Napoléon / Commander | An XIII officer's flintlock | Chequered half stock, gilt side plate and butt cap, brass fore-end cap |
+
+The hard part is not downloading them. **A generated weapon arrives in an arbitrary pose**: the
+cuirassier sword measures 0.97 × 1.00 × 0.96 because it lies along the diagonal of its own bounding
+box, so nothing in the file says which way the blade runs, which end is the point, or which side the
+trigger guard is on. Rather than eyeball six rotations, `src/scene/armoury.ts` **measures** each
+sculpt and fits it into the exact local frame the primitives are authored in — length up `+Y`, butt
+on the origin:
+
+1. **Long axis** from the principal axes of the vertex cloud (a bounding box cannot answer this for
+   a diagonal model — all three sides are equal and none of them is the blade).
+2. **Which end is the point** from the cross-section at each end: muzzles, bayonets and blade tips
+   taper, butt plates and bowl guards do not. The Marengo sword arrives hilt-last and the pistol
+   muzzle-first; neither needs a special case.
+3. **Roll** from the two remaining axes. A blade keeps its flat across the swing (`±X`, matching
+   `curvedBlade`), so a sculpted sabre still cuts edge-first. A firearm's lock plane stands in the
+   barrel's own plane (`±Z`), with the trigger-guard side found by asking which side of the mass the
+   *barrel* sits on — stock, lock and guard all hang below the bore, so the thin end's centroid
+   points at the top of the gun. That is what keeps `gunOrientation`'s promise (guard forward when
+   carried upright, floorward when levelled) true for a mesh nobody rotated by hand.
+
+Only two numbers per weapon are authored: the **fist** and the **bore**, as fractions of the
+weapon's length, because no measurement finds a trigger. Both were read off each sculpt's own
+cross-section profile — the bulge of the lock, the gap between pommel and guard — and land within a
+couple of percent of the hand-built props they replace (the rifle's fist at 0.30 of its length
+against the primitive's 0.30; the musket's bore at 0.80 against 0.77). On the musket the marker is
+the bayonet **socket**, not the bayonet point: the flash has to leave the barrel, not the blade
+beyond it. `src/scene/armoury.test.ts` throws a primitive-built sword and musket into a random
+orientation and checks they come back standing on their butts, point up, guard forward.
+
+Everything downstream is untouched by the swap. The sculpt supplies grip and muzzle; the *loadout*
+still owns the rest angle, the wrist offset and the pose-driven `hold`, so the marksman still kneels
+and levels, the Emperor still carries low, and `muzzleOrigin()` still finds the bore. Sculpts are
+downloaded **with** the rosters (`armSculptWarmJobs`, in the shared window in
+`src/scene/gltfQueue.ts`) rather than after them, because a figure is armed the instant it is built —
+a weapon that lands late is a musket the rest of the game never sees. Geometry and textures are
+shared across the army, only materials are per figure (the highlight, fade and dissolve write into
+them), and any sculpt whose download fails falls straight back to the primitives: a plain musket
+beats an unarmed soldier.
 
 ## Swapping in your own models
 

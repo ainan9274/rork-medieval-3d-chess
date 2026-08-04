@@ -111,7 +111,9 @@ src/
     jungle.ts          canopy, palms, vines, pollen for the Sun Temple
     board.ts           tiles, base, engraved labels, highlight pool
     pieces.ts          rigged GLB loading, skeletal clips, faction materials, mixers
-    weapons.ts         procedural arms, shields and staves per rank
+    weapons.ts         arms per rank: primitives, loadouts, hand/bone mounting
+    armoury.ts         fits the generated Napoleonic weapons into the prop frame
+    gltfQueue.ts       the one download window every GLB fetch shares
     rankBadges.ts      floating heraldic crests
     effects.ts         particle bursts, flashes, dissolve, camera shake
     strikes.ts         per-rank blow visuals (slash arc, ground wave, pillar)
@@ -194,7 +196,7 @@ under `kg.armies`:
 | --- | --- | --- |
 | `ivory` | Ivory Kingdom — King, Queen, Mage, Knight, Guardian, Footman | `kingdom` |
 | `sun` | Sun Empire — Emperor, Priestess, Serpent Priest, Jaguar Warrior, Temple Guardian, Eagle Warrior | `sun` |
-| `empire` | Grande Armée — Napoléon, Imperial Commander (flintlock + Marengo sword), Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` |
+| `empire` | Grande Armée — Napoléon, Imperial Commander (flintlock + Marengo sword), Marshal-Tirailleur, Cuirassier, Artillery Guard, Line Infantry | `empire` — **generated sculpts**, see [Sculpted arms](#sculpted-arms-the-napoleonic-weapons) |
 
 One skin (`ARMY_SKINS` in `src/assets/generated.ts`) carries its own six sculpts, five or six
 clips per rank, weapon family (`LOADOUT` in `weapons.ts`), rank names and its own six death
@@ -475,6 +477,47 @@ its shader programs on the scene's light counts, so the whole hall recompiled mi
 lights are never removed *or hidden* (an invisible light leaves the render state, which changes
 the count just as removing it would); they are dimmed to zero and handed back, and a fourth
 simultaneous bolt simply gets no light.
+
+## Sculpted arms: the Napoleonic weapons
+
+`weapons.ts` builds arms out of boxes, cylinders and extrusions, which is the right answer for the
+medieval and Sun Empire families — nobody can hold a fantasy greatsword up against an original. The
+Grande Armée's arms are different: a Charleville Model 1777, an An XI cuirassier sword and an An XIII
+officer's flintlock are documented objects, so all six are **generated meshes** listed in
+`ARM_SCULPTS` (`src/assets/generated.ts`) — musket with fixed bayonet, Versailles rifled carbine,
+cuirassier sword, general's dress sabre, Marengo presentation sword, officer's pistol.
+
+The work is not the download, it is the pose. **A generated weapon arrives lying anywhere**: the
+cuirassier sword measures 0.97 × 1.00 × 0.96 because it runs along the diagonal of its own bounding
+box, so its file says nothing about which way the blade goes, which end is the point, or which side
+the trigger guard is on. `armoury.ts` therefore *measures* each sculpt (`fitArmSculpt`) and fits it
+into the same local frame the primitives are authored in — length up `+Y`, butt on the origin:
+
+- **Long axis** from the principal axes of the vertex cloud (Jacobi on the covariance). A bounding
+  box cannot answer it for a diagonal model: all three sides are equal and none is the blade.
+- **Which end is the point** from the cross-section at each end — muzzles, bayonets and blade tips
+  taper; butt plates and bowl guards do not. The Marengo sword arrives hilt-last, the pistol
+  muzzle-first, and neither needs a special case.
+- **Roll** from the remaining two axes. A blade keeps its flat across the swing (`±X`, as
+  `curvedBlade` authors it) so a sculpted sabre still cuts edge-first; a firearm's lock plane stands
+  in the barrel's plane (`±Z`), with the guard side found by asking which side of the mass the barrel
+  sits on — stock, lock and trigger guard all hang below the bore, so the thin end's centroid points
+  at the top of the gun. That keeps `gunOrientation`'s guard-forward promise true for a mesh nobody
+  rotated by hand.
+
+Only the **fist** and the **bore** are authored, as fractions of the weapon's length, because no
+measurement finds a trigger. Both were read off each sculpt's cross-section profile and land within a
+couple of percent of the props they replace (rifle fist 0.30 vs 0.30, musket bore 0.80 vs 0.77). The
+musket's marker is the bayonet *socket*, not its point — the flash leaves the barrel, not the blade
+beyond it. `armoury.test.ts` throws a primitive sword and musket into a random orientation and checks
+they come back on their butts, point up, guard forward.
+
+The swap is invisible to everything downstream: the sculpt supplies grip and muzzle, the loadout
+still owns rest angle, wrist offset and `hold`, so the marksman kneels and levels exactly as before.
+Sculpts download **with** the rosters (`armSculptWarmJobs`, sharing the one window in `gltfQueue.ts`)
+because a figure is armed the instant it is built — a weapon that lands late is a musket the rest of
+the game never sees. Geometry and textures are shared army-wide, materials are per figure (highlight,
+fade and dissolve write into them), and a failed download falls back to the primitives.
 
 ## Swapping in different character models
 

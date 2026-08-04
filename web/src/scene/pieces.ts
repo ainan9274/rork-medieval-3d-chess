@@ -12,10 +12,11 @@ import {
   type PieceAnimationSet,
 } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
+import { loadGltf } from "./gltfQueue";
 import { BADGE_LIFT, BADGE_SCALE, TOKEN_SCALE, rankBadgeTexture, tacticalTokenTexture } from "./rankBadges";
 import { radialTexture } from "./textures";
 import { Ease, type TweenManager } from "./tween";
-import { attachWeapons, type AttachedArms } from "./weapons";
+import { armSculptWarmJobs, attachWeapons, type AttachedArms } from "./weapons";
 
 /**
  * Rendered height (world units, 1 unit = 1 board square) per piece kind.
@@ -1506,16 +1507,6 @@ export type TemplateKey = `${Faction}${PieceKind}`;
  */
 export type ClipListener = (keys: TemplateKey[], name: ClipName, clip: THREE.AnimationClip) => void;
 
-type LoadedGltf = Awaited<ReturnType<GLTFLoader["loadAsync"]>>;
-
-/**
- * Download budget for the sculpts. Twelve rigs with five clips each is over
- * seventy GLBs; firing them all at once made the browser drop requests
- * (`TypeError: Failed to fetch`), which silently cost figures their strike and
- * death clips — a capture then skipped the attack entirely. Everything now
- * queues through a small window and is retried before it is given up on.
- */
-const MAX_PARALLEL_DOWNLOADS = 4;
 /**
  * How many times a single clip URL is chased before it is written off. Each
  * request is already five retries deep (see {@link loadGltf}), so two of them
@@ -1524,38 +1515,6 @@ const MAX_PARALLEL_DOWNLOADS = 4;
  * four-attempt round trip before the beat can start.
  */
 const MAX_CLIP_ATTEMPTS = 2;
-let activeDownloads = 0;
-const downloadQueue: (() => void)[] = [];
-
-async function withDownloadSlot<T>(job: () => Promise<T>): Promise<T> {
-  while (activeDownloads >= MAX_PARALLEL_DOWNLOADS) {
-    await new Promise<void>((resolve) => downloadQueue.push(resolve));
-  }
-  activeDownloads += 1;
-  try {
-    return await job();
-  } finally {
-    activeDownloads -= 1;
-    downloadQueue.shift()?.();
-  }
-}
-
-/** Queued GLB fetch with exponential back-off — transient drops are retried. */
-async function loadGltf(loader: GLTFLoader, url: string, attempts = 4): Promise<LoadedGltf> {
-  let last: unknown = new Error(`could not load ${url}`);
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await withDownloadSlot(() => loader.loadAsync(url));
-    } catch (error) {
-      last = error;
-      if (attempt === attempts - 1) break;
-      // Jittered back-off so a whole army does not retry on the same frame.
-      const delay = 240 * 2 ** attempt + Math.random() * 200;
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  throw last;
-}
 
 /**
  * Loads every generated sculpt once, normalises each to its board height and
@@ -1710,19 +1669,35 @@ export class PieceFactory {
       }
     }
 
+    // The Grande Armée's weapons are generated meshes rather than primitives, and
+    // a figure is armed the instant it is built — so they are downloaded *with*
+    // the rosters, not after them, or the board stands up carrying box muskets
+    // for the rest of the game.
+    const armJobs = armSculptWarmJobs(
+      new Set(Object.values(this.skins).map((skin) => ARMY_SKINS[skin].arsenal)),
+    );
+
     let done = 0;
-    await Promise.all(
-      jobs.map(async ({ faction, kind }) => {
+    const total = jobs.length + armJobs.length;
+    await Promise.all([
+      ...jobs.map(async ({ faction, kind }) => {
         try {
           this.templates.set(`${faction}${kind}`, await this.loadRoster(faction, kind));
         } catch (error) {
           console.warn(`[pieces] no sculpt for "${faction}${kind}"`, error);
         } finally {
           done += 1;
-          onProgress?.(done, jobs.length);
+          onProgress?.(done, total);
         }
       }),
-    );
+      ...armJobs.map(async (job) => {
+        // Never throws: a sculpt that cannot be had leaves the figure armed from
+        // primitives instead.
+        await job();
+        done += 1;
+        onProgress?.(done, total);
+      }),
+    ]);
 
     // Anything still missing borrows the other side's figure.
     for (const kind of kinds) {

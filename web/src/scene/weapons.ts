@@ -1,11 +1,22 @@
 /**
  * Hand-held arms for the generated warriors.
  *
- * The Meshy sculpts are unarmed by design (held props break auto-rigging), so
- * every figure gets a procedurally built weapon parented to its hand bone.
- * Geometry is authored once per weapon at "figure height = 1" and cached, then
- * each instance scales it by the figure's own height and cancels the bone's
- * accumulated scale/rotation so the prop sits in the fist at any pose.
+ * The Meshy figures are unarmed by design (held props break auto-rigging), so
+ * every one of them gets a weapon parented to its hand bone. Two sources feed
+ * that fist:
+ *
+ *  - **Primitives**, authored here once per weapon at "figure height = 1" and
+ *   cached. This is the right answer for the medieval and Sun Empire arms, whose
+ *   originals nobody can check, and it is the fallback for everything else.
+ *  - **Generated sculpts** of the real thing, for the Grande Armée — a
+ *   Charleville musket and an An XI cuirassier sword are documented objects, and
+ *   a box-and-cylinder version of one reads as a toy. See `scene/armoury.ts`,
+ *   which fits each downloaded mesh into the same local frame the primitives are
+ *   authored in, so everything downstream (grip, muzzle, pose-driven hold) is
+ *   unchanged by the swap.
+ *
+ * Either way each instance scales the prop by the figure's own height and cancels
+ * the bone's accumulated scale/rotation, so it sits in the fist at any pose.
  */
 
 import * as THREE from "three";
@@ -13,6 +24,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 
 import type { ArsenalId } from "../assets/generated";
 import type { Faction, PieceKind } from "../core/types";
+import { armSculpt, hasArmSculpt, instanceArmSculpt, warmArmSculpt } from "./armoury";
 
 type WeaponRole =
   | "steel"
@@ -35,7 +47,7 @@ interface Part {
   role: WeaponRole;
 }
 
-type WeaponId =
+export type WeaponId =
   | "greatsword"
   | "scepter"
   | "crystalStaff"
@@ -1331,8 +1343,23 @@ export function attachWeapons(
   root.updateMatrixWorld(true);
   const rootInverse = root.matrixWorld.clone().invert();
 
-  /** Adds the built geometry of a prop under `parent`, in the figure's livery. */
+  /**
+   * Adds a prop's body under `parent`: the generated sculpt when the army has one
+   * and it has landed, otherwise the primitives in the figure's livery.
+   *
+   * Geometry and textures are shared across the army either way; only the
+   * materials belong to this figure, because the selection highlight, the fade
+   * and the dissolve all write into them.
+   */
   const dress = (id: WeaponId, parent: THREE.Object3D): void => {
+    const sculpted = instanceArmSculpt(id, color);
+    if (sculpted) {
+      parent.add(sculpted.group);
+      arms.meshes.push(...sculpted.meshes);
+      arms.materials.push(...sculpted.materials);
+      for (const material of sculpted.materials) arms.baseEmissive.push(material.emissiveIntensity);
+      return;
+    }
     for (const [role, geometry] of weaponGeometries(id)) {
       const material = makeMaterial(role, color);
       const mesh = new THREE.Mesh(geometry, material);
@@ -1382,6 +1409,18 @@ export function attachWeapons(
 
   const mount = (id: WeaponId, hand: "right" | "left"): void => {
     const spec = WEAPONS[id];
+    // A landed sculpt overrides the two numbers that are about the weapon's own
+    // proportions rather than about how it is carried: a generated Charleville is
+    // not the same shape as the primitive one, so its fist and its bore sit
+    // elsewhere along the stock. Everything else — rest angle, wrist offset, the
+    // pose-driven hold — belongs to the *loadout* and is unchanged by the swap.
+    const sculpt = armSculpt(id);
+    const gripLength = sculpt?.grip ?? spec.grip;
+    const muzzleAt = sculpt
+      ? sculpt.muzzle === null
+        ? null
+        : new THREE.Vector3(0, sculpt.muzzle, 0)
+      : (spec.muzzle ?? null);
     const bone = findBone(root, hand === "right" ? RIGHT_HAND : LEFT_HAND);
     const otherHand = spec.hold ? findBone(root, hand === "right" ? LEFT_HAND : RIGHT_HAND) : null;
 
@@ -1412,12 +1451,12 @@ export function attachWeapons(
     // A carried firearm is exempt — it is never grounded, and sliding it up
     // through the fist to clear the floor is what made the crouching marksman
     // hold his rifle by the butt plate.
-    let grip = spec.grip;
+    let grip = gripLength;
     if (spec.shield) {
       const bottom = handHeight + offset.y - (spec.half ?? 0.18);
       if (bottom < 0.07) offset.y += 0.07 - bottom;
     } else if (!spec.hold) {
-      grip = Math.min(spec.grip, Math.max(0.03, handHeight + offset.y - 0.07));
+      grip = Math.min(gripLength, Math.max(0.03, handHeight + offset.y - 0.07));
     }
 
     const rest = restOrientation(aim, spec.shield === true);
@@ -1468,10 +1507,10 @@ export function attachWeapons(
     // Same trick for a barrel mouth: the flash, the smoke and the ball all
     // leave the gun itself, wherever the firing arm has swung it. A towed gun
     // outranks a hand-held one — the battery fires its piece, not its pistol.
-    if (spec.muzzle && !arms.muzzle) {
+    if (muzzleAt && !arms.muzzle) {
       const muzzle = new THREE.Object3D();
       muzzle.name = `muzzle_${id}`;
-      muzzle.position.copy(spec.muzzle);
+      muzzle.position.copy(muzzleAt);
       inner.add(muzzle);
       arms.muzzle = muzzle;
     }
@@ -1490,4 +1529,26 @@ export function attachWeapons(
     arms.align();
   }
   return arms;
+}
+
+/**
+ * The sculpts these armies need, as jobs the muster can queue alongside the
+ * figures themselves.
+ *
+ * A figure is armed the instant it is built, from whatever is on hand at that
+ * moment — so a sculpt that arrives after the board has stood up is a musket the
+ * rest of the game never sees. The muster therefore *waits* for these, in the
+ * same download window as the rigs (see `scene/gltfQueue.ts`), and an army with
+ * no sculpted arms adds no jobs at all.
+ */
+export function armSculptWarmJobs(arsenals: Iterable<ArsenalId>): (() => Promise<void>)[] {
+  const wanted = new Set<WeaponId>();
+  for (const arsenal of arsenals) {
+    for (const loadout of Object.values(LOADOUT[arsenal])) {
+      for (const id of [loadout.main, loadout.off, loadout.train]) {
+        if (id && hasArmSculpt(id)) wanted.add(id);
+      }
+    }
+  }
+  return [...wanted].map((id) => () => warmArmSculpt(id));
 }

@@ -6,7 +6,9 @@
  */
 
 import type { Faction, PieceKind } from "../core/types";
+import type { ArmSculptSource } from "../scene/armoury";
 import type { ShotModelSource } from "../scene/gunfire";
+import type { WeaponId } from "../scene/weapons";
 
 const MODEL_BASE = "https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g540sd";
 
@@ -18,9 +20,11 @@ const MODEL_BASE = "https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g
 type Roster<T> = Partial<Record<PieceKind, T>>;
 
 /**
- * Which procedural weapon family arms a skin's figures. The sculpts themselves
- * are unarmed (held props break auto-rigging), so the arms are built in
- * `scene/weapons.ts` and parented to the hand bones.
+ * Which weapon family arms a skin's figures. The figures are always generated
+ * unarmed (held props break auto-rigging), so the arms are separate objects
+ * parented to the hand bones — built from primitives in `scene/weapons.ts` or,
+ * for the Grande Armée, generated sculpts of the real thing (see
+ * {@link ARM_SCULPTS}).
  */
 export type ArsenalId = "kingdom" | "sun" | "empire";
 
@@ -339,6 +343,80 @@ export const SHOT_MODELS: ShotModelSource[] = [
   // Six pounds of sand-cast iron, pockmarked and seamed round its middle.
   { ammo: "roundShot", url: `${MODEL_BASE}/dca2d8a4-736e-4e04-ace0-691ae325a730.glb` },
 ];
+
+/**
+ * The Napoleonic arms, sculpt by sculpt.
+ *
+ * A fantasy blade can be built from boxes and cylinders because nobody can check
+ * it. The Grande Armée's arms cannot: a Charleville musket, an An XI cuirassier
+ * sword and a flintlock pistol are documented objects, and a primitive
+ * approximation of one reads as a toy in a hand that is otherwise a real sculpt.
+ * Each entry is a generated mesh of the actual weapon, fitted into the prop frame
+ * by `scene/armoury.ts` — which *measures* each model rather than trusting its
+ * pose, because the generator hands these back lying along the diagonal of their
+ * own bounding box.
+ *
+ * `grip` and `muzzle` are fractions of the weapon's length up from the butt — the
+ * two things no measurement can find, since nothing in a mesh says "trigger".
+ * Both were read off each sculpt's own cross-section profile (the bulge of the
+ * lock on a firearm, the gap between pommel and guard on a blade) and land within
+ * a couple of percent of the hand-built props they replace.
+ *
+ * A weapon with no entry here — every medieval and Sun Empire arm, and the
+ * battery's towed field gun — is still built from primitives, and so is any of
+ * these whose download fails: a plain musket beats an unarmed soldier.
+ */
+export const ARM_SCULPTS: Partial<Record<WeaponId, ArmSculptSource>> = {
+  // Charleville Model 1777, bayonet fixed. Measured profile: butt plate at one
+  // end, the lock's bulge at 0.22 of the length, bayonet socket at 0.80, point
+  // at the far end — the longest silhouette on the board.
+  musketBayonet: {
+    url: `${MODEL_BASE}/bc6b8c09-5d21-440c-b145-eee190c2e0cf.glb`,
+    length: 0.86,
+    grip: 0.19,
+    // The bore, not the bayonet point: the flash has to leave the barrel.
+    muzzle: 0.8,
+    family: "firearm",
+  },
+  // 1793 Versailles rifled carbine: cheek piece, leaf sight, no bayonet.
+  marksmanRifle: {
+    url: `${MODEL_BASE}/4fb92659-06c6-4bbe-b0d3-ed21f37c2c8b.glb`,
+    length: 0.85,
+    grip: 0.3,
+    muzzle: 0.985,
+    family: "firearm",
+  },
+  // An XI heavy cavalry sword: straight blade, four-branch brass bowl guard.
+  cavalrySabre: {
+    url: `${MODEL_BASE}/ebf0edf9-d446-4fa7-a0a7-d1db4e6123ed.glb`,
+    length: 0.63,
+    grip: 0.11,
+    family: "blade",
+  },
+  // A general officer's dress sabre: gilt hilt, blued and gilt-etched blade.
+  imperialSabre: {
+    url: `${MODEL_BASE}/47492c2e-f774-49e0-b2ef-113a02132a50.glb`,
+    length: 0.72,
+    grip: 0.11,
+    family: "blade",
+  },
+  // The presentation sword: ivory grip, laurelled bow, eagle's head pommel.
+  // This one arrives hilt-last; the fitter finds the point without being told.
+  marengoSword: {
+    url: `${MODEL_BASE}/307d49bd-b8c8-44b5-9837-bd55d8c849b6.glb`,
+    length: 0.73,
+    grip: 0.13,
+    family: "blade",
+  },
+  // An XIII officer's flintlock pistol, gilt-mounted, muzzle-first in the file.
+  officerPistol: {
+    url: `${MODEL_BASE}/ff7079b3-d6d5-44a9-a43a-0bf4d3a2954d.glb`,
+    length: 0.27,
+    grip: 0.15,
+    muzzle: 0.98,
+    family: "firearm",
+  },
+};
 
 /**
  * Orientation verdict reported by the generator for every sculpt:
