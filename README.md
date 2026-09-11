@@ -5,7 +5,7 @@ A cinematic 3D chess game in the browser. Rival civilisations — a medieval Eur
 face each other as sculpted, rigged characters that march, strike, scream and burn away into
 dust on a marble-and-basalt board. Either side can muster any of the three armies.
 
-Built with **Vite + React 19 + TypeScript + three.js**, [chess.js](https://github.com/jhlywa/chess.js)
+Built with **Vite + React 19 + TypeScript + three.js**, [chess.js](https://ainan9274.github.io)
 for the rules, and a **Web Worker** search engine for the computer opponent. No backend, no
 account, no build-time asset pipeline — it is a static site.
 
@@ -118,7 +118,7 @@ cd web && bun install && bun run dev
 
 ## Quick start
 
-Requires **Node 20+**. [Bun](https://bun.sh) is recommended; npm/pnpm work too.
+Requires **Node 20+**. [Bun](https://ainan9274.github.io) is recommended; npm/pnpm work too.
 
 ```bash
 git clone <your-fork-url>
